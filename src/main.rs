@@ -1,7 +1,5 @@
 use teloxide::{prelude::*, types::ChatId, utils::command::BotCommands, RequestError};
 
-use std::error::Error;
-
 const SHIT_HILL: ChatId = ChatId(0 /*CLEANED*/);
 const SOURCE: ChatId = ChatId(0 /*CLEANED*/);
 
@@ -12,7 +10,39 @@ async fn main() {
 
     let bot = Bot::from_env().auto_send();
 
-    teloxide::commands_repl(bot, answer, Command::ty()).await;
+    let handler = Update::filter_message()
+        .branch(
+            dptree::entry()
+                .filter_command::<Command>()
+                .endpoint(command_handle),
+        )
+        .branch(
+            dptree::filter(|msg: Message| {
+                if msg.chat.id != SOURCE {
+                    return false;
+                }
+                if let Some(text) = msg.text() {
+                    text.contains('屎') || text.contains('💩')
+                } else {
+                    false
+                }
+            })
+            .endpoint(forward_shit),
+        );
+    // teloxide::commands_repl(bot, answer, Command::ty()).await;
+
+    Dispatcher::builder(bot, handler)
+        // .dependencies(dptree::deps![parameters])
+        .default_handler(|upd| async move {
+            log::trace!("Unhandled update: {:?}", upd);
+        })
+        .error_handler(LoggingErrorHandler::with_custom_text(
+            "An error has occurred in the dispatcher",
+        ))
+        .build()
+        .setup_ctrlc_handler()
+        .dispatch()
+        .await;
 }
 
 #[derive(BotCommands, Clone)]
@@ -26,24 +56,25 @@ enum Command {
     Source,
 }
 
-async fn answer(
+async fn command_handle(
     bot: AutoSend<Bot>,
     message: Message,
     command: Command,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    if message.chat.id != SOURCE {
-        return Ok(());
-    };
-
+) -> Result<(), RequestError> {
     match command {
         Command::Help => {
             bot.send_message(message.chat.id, Command::descriptions().to_string())
-                .await?
+                .await?;
         }
         Command::Shit => {
             if message.from().is_none() {
                 return Ok(());
             }
+            if message.chat.id != SOURCE {
+                bot.send_message(message.chat.id, "机器人不允许在此处使用")
+                    .await?;
+                return Ok(());
+            };
             let chat_member = bot
                 .get_chat_member(SHIT_HILL, message.from().unwrap().id)
                 .await;
@@ -54,31 +85,37 @@ async fn answer(
                 );
                 request.reply_to_message_id = Some(message.id);
                 request.send().await?;
+                return Ok(());
             } else {
                 chat_member?;
             }
 
             if let Some(reply) = message.reply_to_message() {
-                let sent = bot
-                    .forward_message(SHIT_HILL, message.chat.id, reply.id)
-                    .await?;
-                let mut request = bot.inner().send_message(
-                    message.chat.id,
-                    format!("https://t.me/nipple_hill/{}", sent.id),
-                );
-                request.reply_to_message_id = Some(message.id);
-                request.send().await?
+                forward_shit(bot, reply).await?;
             } else {
                 let mut request = bot.inner().send_message(message.chat.id, "没有选择消息");
                 request.reply_to_message_id = Some(message.id);
-                request.send().await?
-            }
+                request.send().await?;
+            };
         }
         Command::Source => {
             bot.send_message(message.chat.id, "https://gitlab.com/71e6fd52/shit_bot")
-                .await?
+                .await?;
         }
     };
 
+    Ok(())
+}
+
+async fn forward_shit(bot: AutoSend<Bot>, message: &Message) -> Result<(), RequestError> {
+    let sent = bot
+        .forward_message(SHIT_HILL, message.chat.id, message.id)
+        .await?;
+    let mut request = bot.inner().send_message(
+        message.chat.id,
+        format!("https://t.me/nipple_hill/{}", sent.id),
+    );
+    request.reply_to_message_id = Some(message.id);
+    request.send().await?;
     Ok(())
 }
