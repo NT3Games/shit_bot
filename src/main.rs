@@ -1,7 +1,13 @@
-use teloxide::{prelude::*, types::ChatId, utils::command::BotCommands, RequestError};
+use teloxide::{
+    prelude::*,
+    types::{ChatId, UserId},
+    utils::command::BotCommands,
+    RequestError,
+};
 
 const SHIT_HILL: ChatId = ChatId(0 /*CLEANED*/);
 const SOURCE: ChatId = ChatId(0 /*CLEANED*/);
+const NT3: UserId = UserId(0 /*CLEANED*/);
 
 #[tokio::main]
 async fn main() {
@@ -18,7 +24,10 @@ async fn main() {
         )
         .branch(
             dptree::filter(|msg: Message| {
-                if msg.chat.id != SOURCE {
+                if msg.from().is_none() {
+                    return false;
+                }
+                if msg.chat.id != SOURCE || msg.from().unwrap().id != NT3 {
                     return false;
                 }
                 if let Some(text) = msg.text() {
@@ -91,7 +100,7 @@ async fn command_handle(
             }
 
             if let Some(reply) = message.reply_to_message() {
-                forward_shit(bot, reply).await?;
+                forward_shit(bot, reply.to_owned()).await?;
             } else {
                 let mut request = bot.inner().send_message(message.chat.id, "没有选择消息");
                 request.reply_to_message_id = Some(message.id);
@@ -107,7 +116,7 @@ async fn command_handle(
     Ok(())
 }
 
-async fn forward_shit(bot: AutoSend<Bot>, message: &Message) -> Result<(), RequestError> {
+async fn forward_shit(bot: AutoSend<Bot>, message: Message) -> Result<(), RequestError> {
     let sent = bot
         .forward_message(SHIT_HILL, message.chat.id, message.id)
         .await?;
@@ -116,6 +125,7 @@ async fn forward_shit(bot: AutoSend<Bot>, message: &Message) -> Result<(), Reque
         format!("https://t.me/nipple_hill/{}", sent.id),
     );
     request.reply_to_message_id = Some(message.id);
+    request.disable_web_page_preview = Some(true);
     request.send().await?;
     Ok(())
 }
