@@ -8,9 +8,13 @@ edition = "2021"
 [dependencies]
 log = "0.4.17"
 pretty_env_logger = "0.4.0"
-teloxide = { version = "0.9.0", features = ["macros", "auto-send"] }
+teloxide = { version = "0.9.0", features = ["macros"] }
 tokio = { version = "1.18.2", features = [
   "macros",
   "rt-multi-thread",
   "parking_lot",
 ] }
+redis = { version = "0.21.5", features = [
+  "tokio-comp",
+], default-features = false }
+anyhow = "1.0.57"
