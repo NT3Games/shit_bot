@@ -4,10 +4,19 @@ use teloxide::{
     utils::command::BotCommands,
     RequestError,
 };
+use tokio::sync::{Mutex, OnceCell};
 
 const SHIT_HILL: ChatId = ChatId(0 /*CLEANED*/);
 const SOURCE: ChatId = ChatId(0 /*CLEANED*/);
 const NT3: UserId = UserId(0 /*CLEANED*/);
+
+static LAST_MESSAGE: OnceCell<Mutex<Option<i32>>> = OnceCell::const_new();
+
+async fn last_message() -> &'static Mutex<Option<i32>> {
+    LAST_MESSAGE
+        .get_or_init(|| async { Mutex::new(None) })
+        .await
+}
 
 #[tokio::main]
 async fn main() {
@@ -126,6 +135,13 @@ async fn forward_shit(bot: AutoSend<Bot>, message: Message) -> Result<(), Reques
     );
     request.reply_to_message_id = Some(message.id);
     request.disable_web_page_preview = Some(true);
-    request.send().await?;
+    let res = request.send().await?;
+    {
+        let mut last = last_message().await.lock().await;
+        if let Some(id) = *last {
+            bot.delete_message(SOURCE, id).await?;
+        }
+        *last = Some(res.id);
+    }
     Ok(())
 }

@@ -9,4 +9,8 @@ edition = "2021"
 log = "0.4.17"
 pretty_env_logger = "0.4.0"
 teloxide = { version = "0.9.0", features = ["macros", "auto-send"] }
-tokio = { version = "1.18.2", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.18.2", features = [
+  "macros",
+  "rt-multi-thread",
+  "parking_lot",
+] }
