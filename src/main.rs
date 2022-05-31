@@ -25,7 +25,7 @@ const LAST_SHIT_KEY: &str = "_shit_bot_last_shit_message";
 #[tokio::main]
 async fn main() {
     pretty_env_logger::init();
-    log::info!("Starting command bot...");
+    log::info!("Starting shit bot...");
 
     let bot = Bot::from_env();
 
@@ -50,6 +50,15 @@ async fn main() {
                 }
             })
             .endpoint(forward_shit),
+        )
+        .branch(
+            dptree::filter(|msg: Message| msg.chat.id == SHIT_HILL).endpoint(
+                |_bot: Bot, message: Message| async move {
+                    let mut con = get_client().await.get_async_connection().await?;
+                    con.set(LAST_SHIT_KEY, message.id).await?;
+                    Ok(())
+                },
+            ),
         );
     // teloxide::commands_repl(bot, answer, Command::ty()).await;
 
@@ -76,7 +85,7 @@ enum Command {
     Shit,
     #[command(description = "查看源代码")]
     Source,
-    #[command(description = "拉最后的屎")]
+    #[command(description = "“拉”出最后的屎")]
     Pull,
 }
 
