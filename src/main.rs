@@ -46,7 +46,11 @@ async fn main() {
                     return false;
                 }
                 if let Some(text) = msg.text() {
-                    text.len() > 5 && (text.contains('屎') || text.contains('💩'))
+                    text.len() > 5
+                        && (text.contains('屎') || text.contains('💩'))
+                        && !(text.contains("屎公仔")
+                            || text.contains("屎娃娃")
+                            || text.contains("小屎屎"))
                 } else {
                     false
                 }
