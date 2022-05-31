@@ -12,6 +12,7 @@ const SHIT_HILL: ChatId = ChatId(0 /*CLEANED*/);
 const SOURCE: ChatId = ChatId(0 /*CLEANED*/);
 const NT3: UserId = UserId(0 /*CLEANED*/);
 const TRACEWIND: UserId = UserId(0 /*CLEANED*/);
+const DUYAA: UserId = UserId(0 /*CLEANED*/);
 
 static CLIENT: OnceCell<redis::Client> = OnceCell::const_new();
 async fn get_client() -> &'static redis::Client {
@@ -42,7 +43,7 @@ async fn main() {
                     return false;
                 }
                 let id = msg.from().unwrap().id;
-                if msg.chat.id != SOURCE || (id != NT3 && id != TRACEWIND) {
+                if msg.chat.id != SOURCE || (id != NT3 && id != TRACEWIND && id != DUYAA) {
                     return false;
                 }
                 if let Some(text) = msg.text() {
