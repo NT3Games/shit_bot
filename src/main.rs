@@ -11,6 +11,7 @@ use tokio::sync::OnceCell;
 const SHIT_HILL: ChatId = ChatId(0 /*CLEANED*/);
 const SOURCE: ChatId = ChatId(0 /*CLEANED*/);
 const NT3: UserId = UserId(0 /*CLEANED*/);
+const TRACEWIND: UserId = UserId(0 /*CLEANED*/);
 
 static CLIENT: OnceCell<redis::Client> = OnceCell::const_new();
 async fn get_client() -> &'static redis::Client {
@@ -40,11 +41,12 @@ async fn main() {
                 if msg.from().is_none() {
                     return false;
                 }
-                if msg.chat.id != SOURCE || msg.from().unwrap().id != NT3 {
+                let id = msg.from().unwrap().id;
+                if msg.chat.id != SOURCE || (id != NT3 && id != TRACEWIND) {
                     return false;
                 }
                 if let Some(text) = msg.text() {
-                    text.contains('屎') || text.contains('💩')
+                    text.len() > 5 && (text.contains('屎') || text.contains('💩'))
                 } else {
                     false
                 }
