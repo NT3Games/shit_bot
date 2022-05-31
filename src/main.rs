@@ -48,12 +48,13 @@ async fn main() {
                 }
                 if let Some(text) = msg.text() {
                     let text = text.trim();
-                    text.len() > 5
-                        && (text.contains('屎') || text.contains('💩'))
-                        && !(text.contains("屎公仔")
-                            || text.contains("屎娃娃")
-                            || text.contains("小屎屎"))
-                        && !text.ends_with('~')
+                    text.contains("等我长大以后")
+                        || (text.len() > 5
+                            && (text.contains('屎') || text.contains('💩'))
+                            && !(text.contains("屎公仔")
+                                || text.contains("屎娃娃")
+                                || text.contains("小屎屎"))
+                            && !text.ends_with('~'))
                 } else {
                     false
                 }
