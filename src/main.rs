@@ -107,7 +107,7 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
                 .await?;
         }
         Command::Source => {
-            bot.send_message(message.chat.id, "https://gitlab.com/71e6fd52/shit_bot")
+            bot.send_message(message.chat.id, "https://github.com/NT3Games/shit_bot")
                 .send()
                 .await?;
         }
