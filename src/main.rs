@@ -146,13 +146,6 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
             };
         }
         Command::Pull => {
-            if message.chat.id != SOURCE {
-                let mut request = bot.send_message(message.chat.id, "机器人不允许在此处使用");
-                request.reply_to_message_id = Some(message.id);
-                request.send().await?;
-                return Ok(());
-            };
-
             let id: Option<i32> = {
                 let mut con = get_client().await.get_async_connection().await?;
                 con.get(LAST_SHIT_KEY).await?
