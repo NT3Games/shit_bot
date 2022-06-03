@@ -63,7 +63,7 @@ async fn main() -> Result<()> {
                 if let Some(text) = msg.text() {
                     let text = text.trim();
                     text.contains("等我长大以后")
-                        || (text.len() > 5
+                        || (text.chars().nth(5).is_some() // len > 5
                             && (text.contains('屎') || text.contains('💩'))
                             && !(text.contains("屎公仔")
                                 || text.contains("屎娃娃")
