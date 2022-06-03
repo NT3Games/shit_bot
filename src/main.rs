@@ -1,18 +1,21 @@
 use anyhow::Result;
 use redis::AsyncCommands;
+use serde::Deserialize;
 use teloxide::{
     prelude::*,
     types::{ChatId, UserId},
     utils::command::BotCommands,
     RequestError,
 };
-use tokio::sync::OnceCell;
+use tokio::{fs::File, io::AsyncReadExt, sync::OnceCell};
 
-const SHIT_HILL: ChatId = ChatId(0 /*CLEANED*/);
-const SOURCE: ChatId = ChatId(0 /*CLEANED*/);
-const NT3: UserId = UserId(0 /*CLEANED*/);
-const TRACEWIND: UserId = UserId(0 /*CLEANED*/);
-const DUYAA: UserId = UserId(0 /*CLEANED*/);
+#[derive(Debug, Clone, Deserialize)]
+pub struct Config {
+    pub token: String,
+    pub to_chat: ChatId,
+    pub listen_chat: ChatId,
+    pub watch_list: Vec<UserId>,
+}
 
 static CLIENT: OnceCell<redis::Client> = OnceCell::const_new();
 async fn get_client() -> &'static redis::Client {
@@ -21,15 +24,25 @@ async fn get_client() -> &'static redis::Client {
         .await
 }
 
+static CONFIG: OnceCell<Config> = OnceCell::const_new();
+
 const LAST_SENT_KEY: &str = "_shit_bot_last_send_message";
 const LAST_SHIT_KEY: &str = "_shit_bot_last_shit_message";
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     pretty_env_logger::init();
     log::info!("Starting shit bot...");
 
-    let bot = Bot::from_env();
+    let mut f = File::open("config.toml").await?;
+    let mut buf = Vec::new();
+    f.read_to_end(&mut buf).await?;
+
+    let config = toml::from_slice::<Config>(&buf)?;
+
+    let bot = Bot::new(config.token.clone());
+
+    CONFIG.set(config)?;
 
     let handler = Update::filter_message()
         .branch(
@@ -39,11 +52,12 @@ async fn main() {
         )
         .branch(
             dptree::filter(|msg: Message| {
+                let config = CONFIG.get().unwrap();
                 if msg.from().is_none() {
                     return false;
                 }
                 let id = msg.from().unwrap().id;
-                if msg.chat.id != SOURCE || (id != NT3 && id != TRACEWIND && id != DUYAA) {
+                if msg.chat.id != config.listen_chat || !config.watch_list.contains(&id) {
                     return false;
                 }
                 if let Some(text) = msg.text() {
@@ -62,7 +76,7 @@ async fn main() {
             .endpoint(forward_shit),
         )
         .branch(
-            dptree::filter(|msg: Message| msg.chat.id == SHIT_HILL).endpoint(
+            dptree::filter(|msg: Message| msg.chat.id == CONFIG.get().unwrap().to_chat).endpoint(
                 |_bot: Bot, message: Message| async move {
                     let mut con = get_client().await.get_async_connection().await?;
                     con.set(LAST_SHIT_KEY, message.id).await?;
@@ -84,6 +98,8 @@ async fn main() {
         .setup_ctrlc_handler()
         .dispatch()
         .await;
+
+    Ok(())
 }
 
 #[derive(BotCommands, Clone)]
@@ -100,6 +116,7 @@ enum Command {
 }
 
 async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<()> {
+    let config = CONFIG.get().unwrap();
     match command {
         Command::Help => {
             bot.send_message(message.chat.id, Command::descriptions().to_string())
@@ -115,14 +132,14 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
             if message.from().is_none() {
                 return Ok(());
             }
-            if message.chat.id != SOURCE {
+            if message.chat.id != config.listen_chat {
                 let mut request = bot.send_message(message.chat.id, "机器人不允许在此处使用");
                 request.reply_to_message_id = Some(message.id);
                 request.send().await?;
                 return Ok(());
             };
             let chat_member = bot
-                .get_chat_member(SHIT_HILL, message.from().unwrap().id)
+                .get_chat_member(config.to_chat, message.from().unwrap().id)
                 .send()
                 .await;
             if let Err(RequestError::Api(teloxide::ApiError::UserNotFound)) = chat_member {
@@ -167,7 +184,7 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
 
 async fn forward_shit(bot: Bot, message: Message) -> Result<()> {
     let sent = bot
-        .forward_message(SHIT_HILL, message.chat.id, message.id)
+        .forward_message(CONFIG.get().unwrap().to_chat, message.chat.id, message.id)
         .send()
         .await?;
 
@@ -193,7 +210,9 @@ async fn replace_send(
 ) -> Result<()> {
     use teloxide::types::Recipient::Id;
 
-    if message.chat_id != Id(SOURCE) {
+    let source = CONFIG.get().unwrap().listen_chat;
+
+    if message.chat_id != Id(source) {
         panic!()
     }
     let res = message.send().await?;
@@ -202,7 +221,7 @@ async fn replace_send(
     let last: Option<i32> = con.get(LAST_SENT_KEY).await?;
     con.set(LAST_SENT_KEY, res.id).await?;
     if let Some(id) = last {
-        bot.delete_message(SOURCE, id).send().await?;
+        bot.delete_message(source, id).send().await?;
     }
     Ok(())
 }

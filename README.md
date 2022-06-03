@@ -51,12 +51,7 @@ cd shit_bot
 
 确保已安装 Rust 编译器和 Cargo。安装教程见 Rust [官方文档](https://doc.rust-lang.org/book/ch01-01-installation.html)。
 
-根据需要修改自定义转发用户、群组和“屎书”所在聊天的 Telegram ID，并设置对应的环境变量
-
-```bash
-export TELOXIDE_TOKEN=<bot token>
-export RUST_LOG=<trace|debug|info|warn|error>
-```
+复制 `config.toml.example` 为 `config.toml`，并根据需要修改自定义转发用户、群组和“屎书”所在聊天的 Telegram ID。
 
 再在仓库根目录下，运行如下命令：
 

@@ -18,3 +18,5 @@ redis = { version = "0.21.5", features = [
   "tokio-comp",
 ], default-features = false }
 anyhow = "1.0.57"
+toml = "0.5.9"
+serde = { version = "1.0.137", features = ["serde_derive"] }
