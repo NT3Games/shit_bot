@@ -246,6 +246,7 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
                             ),
                         );
                         request.reply_to_message_id = Some(message.id);
+                        request.parse_mode = Some(teloxide::types::ParseMode::Html);
                         request.send().await?;
                     }
                     Err(e) => {
