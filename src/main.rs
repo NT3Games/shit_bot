@@ -10,6 +10,8 @@ use teloxide::{
 };
 use tokio::{fs::File, io::AsyncReadExt, sync::OnceCell};
 
+type Bot = AutoSend<teloxide::Bot>;
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     pub token: String,
@@ -41,7 +43,7 @@ async fn main() -> Result<()> {
 
     let config = toml::from_slice::<Config>(&buf)?;
 
-    let bot = Bot::new(config.token.clone());
+    let bot = teloxide::Bot::new(config.token.clone()).auto_send();
 
     CONFIG.set(config)?;
 
@@ -144,9 +146,9 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
         }
         Command::Shit => {
             if message.chat.id != config.listen_chat {
-                let mut request = bot.send_message(message.chat.id, "机器人不允许在此处使用");
-                request.reply_to_message_id = Some(message.id);
-                request.send().await?;
+                bot.send_message(message.chat.id, "机器人不允许在此处使用")
+                    .reply_to_message_id(message.id)
+                    .await?;
                 return Ok(());
             };
             let chat_member = bot
@@ -154,11 +156,13 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
                 .send()
                 .await;
             if let Err(RequestError::Api(teloxide::ApiError::UserNotFound)) = chat_member {
-                let mut request = bot.send_message(
-                    message.chat.id,
-                    "请先加入 https://t.me/nipple_hill 以使用此命令",
-                );
-                request.reply_to_message_id = Some(message.id);
+                let request = bot
+                    .inner()
+                    .send_message(
+                        message.chat.id,
+                        "请先加入 https://t.me/nipple_hill 以使用此命令",
+                    )
+                    .reply_to_message_id(message.id);
                 replace_send(bot, request).await?;
                 return Ok(());
             } else {
@@ -171,8 +175,10 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
                     .send()
                     .await?;
             } else {
-                let mut request = bot.send_message(message.chat.id, "没有选择消息");
-                request.reply_to_message_id = Some(message.id);
+                let request = bot
+                    .inner()
+                    .send_message(message.chat.id, "没有选择消息")
+                    .reply_to_message_id(message.id);
                 replace_send(bot, request).await?;
             };
         }
@@ -187,9 +193,9 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
                 "未找到！".to_string()
             };
 
-            let mut request = bot.send_message(message.chat.id, text);
-            request.reply_to_message_id = Some(message.id);
-            request.send().await?;
+            bot.send_message(message.chat.id, text)
+                .reply_to_message_id(message.id)
+                .await?;
         }
         Command::Bullshit => {
             let privileged = bot
@@ -199,17 +205,15 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
                 .map(|c| c.is_privileged())
                 .unwrap_or(false);
             if !privileged {
-                let mut request = bot.send_message(message.chat.id, "你没有权限使用此命令");
-                request.reply_to_message_id = Some(message.id);
-                request.send().await?;
+                bot.send_message(message.chat.id, "你没有权限使用此命令")
+                    .reply_to_message_id(message.id)
+                    .await?;
                 return Ok(());
             }
             if let Some(reply) = message.reply_to_message() {
                 let (res, name) = if let Some(sender) = reply.sender_chat() {
                     (
-                        bot.ban_chat_sender_chat(message.chat.id, sender.id)
-                            .send()
-                            .await,
+                        bot.ban_chat_sender_chat(message.chat.id, sender.id).await,
                         if let Some(title) = sender.title() {
                             title.to_string()
                         } else if let Some(username) = sender.username() {
@@ -226,7 +230,6 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
                             sender.id,
                             teloxide::types::ChatPermissions::empty(),
                         )
-                        .send()
                         .await,
                         if let Some(username) = sender.username.as_ref() {
                             format!("{} (@{})", sender.full_name(), username)
@@ -237,28 +240,28 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
                 };
                 match res {
                     Ok(_) => {
-                        let mut request = bot.send_message(
+                        bot.send_message(
                             message.chat.id,
                             format!(
                                 "<a href=\"tg://user?id={}\">{}</a> 的嘴已被屎球堵上",
                                 reply.from().unwrap().id,
                                 name
                             ),
-                        );
-                        request.reply_to_message_id = Some(message.id);
-                        request.parse_mode = Some(teloxide::types::ParseMode::Html);
-                        request.send().await?;
+                        )
+                        .reply_to_message_id(message.id)
+                        .parse_mode(teloxide::types::ParseMode::Html)
+                        .await?;
                     }
                     Err(e) => {
-                        let mut request = bot.send_message(message.chat.id, e.to_string());
-                        request.reply_to_message_id = Some(message.id);
-                        request.send().await?;
+                        bot.send_message(message.chat.id, e.to_string())
+                            .reply_to_message_id(message.id)
+                            .await?;
                     }
                 }
             } else {
-                let mut request = bot.send_message(message.chat.id, "没有选择消息");
-                request.reply_to_message_id = Some(message.id);
-                request.send().await?;
+                bot.send_message(message.chat.id, "没有选择消息")
+                    .reply_to_message_id(message.id)
+                    .await?;
             };
         }
     };
@@ -276,12 +279,12 @@ async fn edit_shit(bot: Bot, message: Message) -> Result<()> {
     };
 
     if let Some(id) = sent {
-        let mut request = bot.send_message(
+        bot.send_message(
             CONFIG.get().unwrap().to_chat,
             format!("修改为：\n{}", message.text().unwrap()),
-        );
-        request.reply_to_message_id = Some(id);
-        request.send().await?;
+        )
+        .reply_to_message_id(id)
+        .await?;
     }
     Ok(())
 }
@@ -297,12 +300,14 @@ async fn forward_shit(bot: Bot, message: Message) -> Result<()> {
         con.set(LAST_SHIT_KEY, sent.id).await?;
     }
 
-    let mut request = bot.send_message(
-        message.chat.id,
-        format!("https://t.me/nipple_hill/{}", sent.id),
-    );
-    request.reply_to_message_id = Some(message.id);
-    request.disable_web_page_preview = Some(true);
+    let request = bot
+        .inner()
+        .send_message(
+            message.chat.id,
+            format!("https://t.me/nipple_hill/{}", sent.id),
+        )
+        .reply_to_message_id(message.id)
+        .disable_web_page_preview(true);
     replace_send(bot, request).await?;
 
     {
