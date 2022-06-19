@@ -2,6 +2,7 @@ use anyhow::Result;
 use redis::AsyncCommands;
 use serde::Deserialize;
 use teloxide::{
+    dispatching::UpdateFilterExt,
     prelude::*,
     types::{ChatId, UserId},
     utils::command::BotCommands,
@@ -44,44 +45,52 @@ async fn main() -> Result<()> {
 
     CONFIG.set(config)?;
 
-    let handler = Update::filter_message()
+    let handler = dptree::entry()
         .branch(
-            dptree::entry()
-                .filter_command::<Command>()
-                .endpoint(command_handle),
-        )
-        .branch(
-            dptree::filter(|msg: Message| {
-                let config = CONFIG.get().unwrap();
-                if msg.from().is_none() {
-                    return false;
-                }
-                let id = msg.from().unwrap().id;
-                if msg.chat.id != config.listen_chat || !config.watch_list.contains(&id) {
-                    return false;
-                }
-                if let Some(text) = msg.text() {
-                    let text = text.trim();
-                    text.contains("等我长大以后")
-                        || (text.chars().nth(5).is_some() // len > 5
+            Update::filter_message()
+                .branch(
+                    dptree::entry()
+                        .filter_command::<Command>()
+                        .endpoint(command_handle),
+                )
+                .branch(
+                    dptree::filter(|msg: Message| {
+                        let config = CONFIG.get().unwrap();
+                        if msg.from().is_none() {
+                            return false;
+                        }
+                        let id = msg.from().unwrap().id;
+                        if msg.chat.id != config.listen_chat || !config.watch_list.contains(&id) {
+                            return false;
+                        }
+                        if let Some(text) = msg.text() {
+                            let text = text.trim();
+                            text.contains("等我长大以后")
+                                || (text.chars().nth(5).is_some() // len > 5
                             && (text.contains('屎') || text.contains('💩'))
                             && !(text.contains("屎公仔")
                                 || text.contains("屎娃娃")
                                 || text.contains("小屎屎"))
                             && !text.ends_with('~'))
-                } else {
-                    false
-                }
-            })
-            .endpoint(forward_shit),
+                        } else {
+                            false
+                        }
+                    })
+                    .endpoint(forward_shit),
+                )
+                .branch(
+                    dptree::filter(|msg: Message| msg.chat.id == CONFIG.get().unwrap().to_chat)
+                        .endpoint(|_bot: Bot, message: Message| async move {
+                            let mut con = get_client().await.get_async_connection().await?;
+                            con.set(LAST_SHIT_KEY, message.id).await?;
+                            Ok(())
+                        }),
+                ),
         )
         .branch(
-            dptree::filter(|msg: Message| msg.chat.id == CONFIG.get().unwrap().to_chat).endpoint(
-                |_bot: Bot, message: Message| async move {
-                    let mut con = get_client().await.get_async_connection().await?;
-                    con.set(LAST_SHIT_KEY, message.id).await?;
-                    Ok(())
-                },
+            Update::filter_edited_message().branch(
+                dptree::filter(|msg: Message| msg.chat.id == CONFIG.get().unwrap().listen_chat)
+                    .endpoint(edit_shit),
             ),
         );
     // teloxide::commands_repl(bot, answer, Command::ty()).await;
@@ -253,6 +262,26 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
     Ok(())
 }
 
+async fn edit_shit(bot: Bot, message: Message) -> Result<()> {
+    if message.text().is_none() {
+        return Ok(());
+    }
+    let sent: Option<i32> = {
+        let mut con = get_client().await.get_async_connection().await?;
+        con.get(message.id).await?
+    };
+
+    if let Some(id) = sent {
+        let mut request = bot.send_message(
+            CONFIG.get().unwrap().to_chat,
+            format!("修改为：\n{}", message.text().unwrap()),
+        );
+        request.reply_to_message_id = Some(id);
+        request.send().await?;
+    }
+    Ok(())
+}
+
 async fn forward_shit(bot: Bot, message: Message) -> Result<()> {
     let sent = bot
         .forward_message(CONFIG.get().unwrap().to_chat, message.chat.id, message.id)
@@ -271,7 +300,12 @@ async fn forward_shit(bot: Bot, message: Message) -> Result<()> {
     request.reply_to_message_id = Some(message.id);
     request.disable_web_page_preview = Some(true);
     replace_send(bot, request).await?;
-    // let res = request.send().await?;
+
+    {
+        let mut con = get_client().await.get_async_connection().await?;
+        con.set(message.id, sent.id).await?;
+    }
+
     Ok(())
 }
 
