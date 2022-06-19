@@ -113,9 +113,14 @@ enum Command {
     Source,
     #[command(description = "“拉”出最后的屎")]
     Pull,
+    #[command(description = "屎球堵嘴")]
+    Bullshit,
 }
 
 async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<()> {
+    if message.from().is_none() {
+        return Ok(());
+    }
     let config = CONFIG.get().unwrap();
     match command {
         Command::Help => {
@@ -129,9 +134,6 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
                 .await?;
         }
         Command::Shit => {
-            if message.from().is_none() {
-                return Ok(());
-            }
             if message.chat.id != config.listen_chat {
                 let mut request = bot.send_message(message.chat.id, "机器人不允许在此处使用");
                 request.reply_to_message_id = Some(message.id);
@@ -176,6 +178,75 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
             let mut request = bot.send_message(message.chat.id, text);
             request.reply_to_message_id = Some(message.id);
             request.send().await?;
+        }
+        Command::Bullshit => {
+            let privileged = bot
+                .get_chat_member(config.to_chat, message.from().unwrap().id)
+                .send()
+                .await
+                .map(|c| c.is_privileged())
+                .unwrap_or(false);
+            if !privileged {
+                let mut request = bot.send_message(message.chat.id, "你没有权限使用此命令");
+                request.reply_to_message_id = Some(message.id);
+                request.send().await?;
+                return Ok(());
+            }
+            if let Some(reply) = message.reply_to_message() {
+                let (res, name) = if let Some(sender) = reply.sender_chat() {
+                    (
+                        bot.ban_chat_sender_chat(message.chat.id, sender.id)
+                            .send()
+                            .await,
+                        if let Some(title) = sender.title() {
+                            title.to_string()
+                        } else if let Some(username) = sender.username() {
+                            format!("@{}", username)
+                        } else {
+                            "频道身份用户".to_string()
+                        },
+                    )
+                } else {
+                    let sender = reply.from().unwrap();
+                    (
+                        bot.restrict_chat_member(
+                            message.chat.id,
+                            sender.id,
+                            teloxide::types::ChatPermissions::empty(),
+                        )
+                        .send()
+                        .await,
+                        if let Some(username) = sender.username.as_ref() {
+                            format!("{} (@{})", sender.full_name(), username)
+                        } else {
+                            sender.full_name()
+                        },
+                    )
+                };
+                match res {
+                    Ok(_) => {
+                        let mut request = bot.send_message(
+                            message.chat.id,
+                            format!(
+                                "<a href=\"tg://user?id={}\">{}</a> 的嘴已被屎球堵上",
+                                reply.from().unwrap().id,
+                                name
+                            ),
+                        );
+                        request.reply_to_message_id = Some(message.id);
+                        request.send().await?;
+                    }
+                    Err(e) => {
+                        let mut request = bot.send_message(message.chat.id, e.to_string());
+                        request.reply_to_message_id = Some(message.id);
+                        request.send().await?;
+                    }
+                }
+            } else {
+                let mut request = bot.send_message(message.chat.id, "没有选择消息");
+                request.reply_to_message_id = Some(message.id);
+                request.send().await?;
+            };
         }
     };
 
