@@ -166,7 +166,10 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
             }
 
             if let Some(reply) = message.reply_to_message() {
-                forward_shit(bot, reply.to_owned()).await?;
+                forward_shit(bot.clone(), reply.to_owned()).await?;
+                bot.delete_message(message.chat.id, message.id)
+                    .send()
+                    .await?;
             } else {
                 let mut request = bot.send_message(message.chat.id, "没有选择消息");
                 request.reply_to_message_id = Some(message.id);
