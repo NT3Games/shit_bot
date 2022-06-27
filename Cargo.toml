@@ -18,5 +18,7 @@ redis = { version = "0.21.5", features = [
   "tokio-comp",
 ], default-features = false }
 anyhow = "1.0.57"
-toml = "0.5.9"
 serde = { version = "1.0.137", features = ["serde_derive"] }
+serde_yaml = "0.8.24"
+chrono = "0.4.19"
+rand = "0.8.5"

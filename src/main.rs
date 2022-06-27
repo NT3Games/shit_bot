@@ -1,3 +1,4 @@
+#![feature(const_btree_new)]
 use anyhow::Result;
 use redis::AsyncCommands;
 use serde::Deserialize;
@@ -10,6 +11,8 @@ use teloxide::{
 };
 use tokio::{fs::File, io::AsyncReadExt, sync::OnceCell};
 
+pub mod admin;
+
 type Bot = AutoSend<teloxide::Bot>;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -18,6 +21,14 @@ pub struct Config {
     pub to_chat: ChatId,
     pub listen_chat: ChatId,
     pub watch_list: Vec<UserId>,
+    pub questions: Vec<Question>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Question {
+    pub title: String,
+    pub wrong: Vec<String>,
+    pub correct: Vec<String>,
 }
 
 static CLIENT: OnceCell<redis::Client> = OnceCell::const_new();
@@ -27,7 +38,7 @@ async fn get_client() -> &'static redis::Client {
         .await
 }
 
-static CONFIG: OnceCell<Config> = OnceCell::const_new();
+pub static CONFIG: OnceCell<Config> = OnceCell::const_new();
 
 const LAST_SENT_KEY: &str = "_shit_bot_last_send_message";
 const LAST_SHIT_KEY: &str = "_shit_bot_last_shit_message";
@@ -37,11 +48,11 @@ async fn main() -> Result<()> {
     pretty_env_logger::init();
     log::info!("Starting shit bot...");
 
-    let mut f = File::open("config.toml").await?;
+    let mut f = File::open("config.yaml").await?;
     let mut buf = Vec::new();
     f.read_to_end(&mut buf).await?;
 
-    let config = toml::from_slice::<Config>(&buf)?;
+    let config = serde_yaml::from_slice::<Config>(&buf)?;
 
     let bot = teloxide::Bot::new(config.token.clone()).auto_send();
 
@@ -50,6 +61,18 @@ async fn main() -> Result<()> {
     let handler = dptree::entry()
         .branch(
             Update::filter_message()
+                .branch(Message::filter_new_chat_members().endpoint(
+                    |bot: Bot, msg: Message| async move {
+                        if let Some(users) = msg.new_chat_members() {
+                            for user in users {
+                                admin::send_auth(bot.clone(), user.to_owned(), msg.chat.clone())
+                                    .await?;
+                            }
+                        }
+
+                        Ok(())
+                    },
+                ))
                 .branch(
                     dptree::entry()
                         .filter_command::<Command>()
@@ -94,7 +117,8 @@ async fn main() -> Result<()> {
                 dptree::filter(|msg: Message| msg.chat.id == CONFIG.get().unwrap().listen_chat)
                     .endpoint(edit_shit),
             ),
-        );
+        )
+        .branch(Update::filter_callback_query().endpoint(admin::callback));
     // teloxide::commands_repl(bot, answer, Command::ty()).await;
 
     Dispatcher::builder(bot, handler)
