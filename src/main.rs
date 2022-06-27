@@ -73,6 +73,7 @@ async fn main() -> Result<()> {
                         Ok(())
                     },
                 ))
+                .branch(Message::filter_pinned().endpoint(auto_unpin))
                 .branch(
                     dptree::entry()
                         .filter_command::<Command>()
@@ -361,5 +362,25 @@ async fn replace_send(
     if let Some(id) = last {
         bot.delete_message(source, id).send().await?;
     }
+    Ok(())
+}
+
+async fn auto_unpin(bot: Bot, message: Message) -> Result<()> {
+    if !message.is_automatic_forward() {
+        return Ok(());
+    }
+
+    let res = bot
+        .unpin_chat_message(message.chat.id)
+        .message_id(message.id)
+        .await;
+
+    if let Err(err) = res {
+        bot.send_message(message.chat.id, err.to_string())
+            .reply_to_message_id(message.id)
+            .await?;
+        return Err(err.into());
+    }
+
     Ok(())
 }
