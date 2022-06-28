@@ -11,7 +11,7 @@ use teloxide::{
         User, UserId,
     },
 };
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, time::sleep};
 
 use crate::{Bot, CONFIG};
 
@@ -62,7 +62,10 @@ pub async fn send_auth(bot: Bot, user: User, chat: Chat) -> Result<()> {
     let mut users = UNVERIFIED_USERS.lock().await;
 
     let msg = bot
-        .send_message(chat.id, question.title.to_string())
+        .send_message(
+            chat.id,
+            format!("你有 5 分钟时间回答以下问题：\n\n{}", question.title),
+        )
         .parse_mode(ParseMode::MarkdownV2)
         .reply_markup(ReplyMarkup::InlineKeyboard(keyboard))
         .await?;
@@ -75,6 +78,29 @@ pub async fn send_auth(bot: Bot, user: User, chat: Chat) -> Result<()> {
             tried_times: 0,
         },
     );
+
+    let bot2 = bot.clone();
+
+    tokio::spawn(async move {
+        sleep(std::time::Duration::from_secs(5 * 60)).await;
+        let mut users = UNVERIFIED_USERS.lock().await;
+        if let Some(_data) = users.get_mut(&msg.id) {
+            let res = bot2
+                .ban_chat_member(chat.id, user.id)
+                .until_date(Utc::now() + Duration::minutes(10))
+                .await;
+            if let Err(err) = res {
+                bot.send_message(chat.id, err.to_string()).await.ok();
+            }
+
+            let res = bot.delete_message(chat.id, msg.id).await;
+            if let Err(err) = res {
+                bot.send_message(chat.id, err.to_string()).await.ok();
+            }
+
+            users.remove(&msg.id);
+        }
+    });
 
     Ok(())
 }
