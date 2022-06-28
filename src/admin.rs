@@ -1,10 +1,13 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, iter};
 
 use anyhow::Result;
 use chrono::{offset::Utc, Duration};
 use rand::{prelude::SliceRandom, thread_rng, Rng};
 use teloxide::{
-    payloads::{AnswerCallbackQuerySetters, BanChatMemberSetters, SendMessageSetters},
+    payloads::{
+        AnswerCallbackQuerySetters, BanChatMemberSetters, EditMessageTextSetters,
+        SendMessageSetters,
+    },
     prelude::Requester,
     types::{
         CallbackQuery, Chat, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode, ReplyMarkup,
@@ -18,30 +21,50 @@ use crate::{Bot, CONFIG};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct QueryData {
     pub user_id: UserId,
-    pub correct: u8,
+    pub correct: usize,
     pub tried_times: u8,
 }
 
 static UNVERIFIED_USERS: Mutex<BTreeMap<i32, QueryData>> = Mutex::const_new(BTreeMap::new());
 
-pub async fn send_auth(bot: Bot, user: User, chat: Chat) -> Result<()> {
-    // let mut rng = thread_rng();
+pub fn new_question() -> (&'static String, Vec<&'static String>, usize) {
+    let mut rng = thread_rng();
     let question = CONFIG
         .get()
         .unwrap()
         .questions
-        .choose(&mut thread_rng())
+        .choose(&mut rng)
         .expect("no question");
     let correct = question
         .correct
-        .choose(&mut thread_rng())
+        .choose(&mut rng)
         .expect("no correct answer");
     let mut buttons = question
         .wrong
-        .choose_multiple(&mut thread_rng(), 3)
+        .choose_multiple(&mut rng, 3)
         .collect::<Vec<_>>();
-    let correct_idx = thread_rng().gen_range(0..=buttons.len());
+    let correct_idx = rng.gen_range(0..=buttons.len());
     buttons.insert(correct_idx, correct);
+
+    (&question.title, buttons, correct_idx)
+}
+
+pub fn keyboard<S, I>(buttons: Vec<S>, addition: I) -> InlineKeyboardMarkup
+where
+    S: Into<String>,
+    I: IntoIterator<Item = InlineKeyboardButton>,
+{
+    InlineKeyboardMarkup::default().append_row(
+        buttons
+            .into_iter()
+            .enumerate()
+            .map(|(idx, text)| InlineKeyboardButton::callback(text, idx.to_string()))
+            .chain(addition),
+    )
+}
+
+pub async fn send_auth(bot: Bot, user: User, chat: Chat) -> Result<()> {
+    let (title, buttons, correct_idx) = new_question();
 
     // mute user
     let res = bot
@@ -52,11 +75,9 @@ pub async fn send_auth(bot: Bot, user: User, chat: Chat) -> Result<()> {
         return Err(err.into());
     }
 
-    let keyboard = InlineKeyboardMarkup::default().append_row(
-        buttons
-            .into_iter()
-            .enumerate()
-            .map(|(idx, text)| InlineKeyboardButton::callback(text, idx.to_string())),
+    let keyboard = keyboard(
+        buttons,
+        iter::once(InlineKeyboardButton::callback("换题", "IDK")),
     );
 
     let mut users = UNVERIFIED_USERS.lock().await;
@@ -64,7 +85,7 @@ pub async fn send_auth(bot: Bot, user: User, chat: Chat) -> Result<()> {
     let msg = bot
         .send_message(
             chat.id,
-            format!("你有 5 分钟时间回答以下问题：\n\n{}", question.title),
+            format!("你有 5 分钟时间回答以下问题：\n\n{}", title),
         )
         .parse_mode(ParseMode::MarkdownV2)
         .reply_markup(ReplyMarkup::InlineKeyboard(keyboard))
@@ -74,7 +95,7 @@ pub async fn send_auth(bot: Bot, user: User, chat: Chat) -> Result<()> {
         msg.id,
         QueryData {
             user_id: user.id,
-            correct: correct_idx as u8,
+            correct: correct_idx,
             tried_times: 0,
         },
     );
@@ -127,7 +148,9 @@ pub async fn callback(bot: Bot, callback: CallbackQuery) -> Result<()> {
         return Ok(());
     }
 
-    if callback.data.unwrap() == data.correct.to_string() {
+    let callback_data = callback.data.unwrap();
+
+    if callback_data == data.correct.to_string() {
         bot.answer_callback_query(callback.id).await?;
         let res = bot
             .restrict_chat_member(
@@ -143,6 +166,13 @@ pub async fn callback(bot: Bot, callback: CallbackQuery) -> Result<()> {
         bot.delete_message(origin.chat.id, origin.id).await?;
 
         users.remove(&origin.id);
+    } else if callback_data == "IDK" {
+        let (title, buttons, correct_idx) = new_question();
+        let keyboard = keyboard(buttons, iter::empty());
+        bot.edit_message_text(origin.chat.id, origin.id, title)
+            .reply_markup(keyboard)
+            .await?;
+        data.correct = correct_idx;
     } else {
         if data.tried_times >= 2 {
             bot.answer_callback_query(callback.id)
