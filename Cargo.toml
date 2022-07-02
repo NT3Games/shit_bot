@@ -22,3 +22,4 @@ serde = { version = "1.0.137", features = ["serde_derive"] }
 serde_yaml = "0.8.24"
 chrono = "0.4.19"
 rand = "0.8.5"
+reqwest = "0.11.11"
