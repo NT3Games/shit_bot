@@ -1,6 +1,5 @@
 #![feature(const_btree_new)]
 use anyhow::Result;
-use log::debug;
 use redis::AsyncCommands;
 use serde::Deserialize;
 use teloxide::{

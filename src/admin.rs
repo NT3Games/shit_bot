@@ -10,8 +10,8 @@ use teloxide::{
     },
     prelude::Requester,
     types::{
-        CallbackQuery, Chat, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode, ReplyMarkup,
-        User, UserId,
+        CallbackQuery, Chat, ChatMember, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode,
+        ReplyMarkup, User, UserId,
     },
 };
 use tokio::{sync::Mutex, time::sleep};
@@ -54,13 +54,18 @@ where
     S: Into<String>,
     I: IntoIterator<Item = InlineKeyboardButton>,
 {
-    InlineKeyboardMarkup::default().append_row(
-        buttons
-            .into_iter()
-            .enumerate()
-            .map(|(idx, text)| InlineKeyboardButton::callback(text, idx.to_string()))
-            .chain(addition),
-    )
+    InlineKeyboardMarkup::default()
+        .append_row(
+            buttons
+                .into_iter()
+                .enumerate()
+                .map(|(idx, text)| InlineKeyboardButton::callback(text, idx.to_string()))
+                .chain(addition),
+        )
+        .append_row(vec![
+            InlineKeyboardButton::callback("手动踢出", "admin-ban"),
+            InlineKeyboardButton::callback("手动通过", "admin-allow"),
+        ])
 }
 
 pub async fn send_auth(bot: Bot, user: User, chat: Chat) -> Result<()> {
@@ -141,6 +146,69 @@ pub async fn callback(bot: Bot, callback: CallbackQuery) -> Result<()> {
     };
 
     let callback_data = callback.data.unwrap();
+
+    if callback_data.starts_with("admin") {
+        let res = bot.get_chat_member(origin.chat.id, callback.from.id).await;
+        let member: ChatMember = match res {
+            Ok(member) => member,
+            Err(err) => {
+                bot.answer_callback_query(callback.id)
+                    .text(format!("{}", err))
+                    .show_alert(true)
+                    .await?;
+                return Ok(());
+            }
+        };
+        if member.is_privileged() {
+            match &callback_data[6..] {
+                "ban" => {
+                    let res = bot.ban_chat_member(origin.chat.id, data.user_id).await;
+                    if let Err(err) = res {
+                        bot.answer_callback_query(callback.id)
+                            .text(err.to_string())
+                            .show_alert(true)
+                            .await?;
+                    } else {
+                        bot.answer_callback_query(callback.id).await?;
+                    }
+                    bot.delete_message(origin.chat.id, origin.id).await?;
+                    users.remove(&origin.id);
+                }
+                "allow" => {
+                    let res = bot
+                        .restrict_chat_member(
+                            origin.chat.id,
+                            data.user_id,
+                            teloxide::types::ChatPermissions::all(),
+                        )
+                        .await;
+                    if let Err(err) = res {
+                        bot.answer_callback_query(callback.id)
+                            .text(err.to_string())
+                            .show_alert(true)
+                            .await?;
+                    } else {
+                        bot.answer_callback_query(callback.id).await?;
+                    }
+                    bot.delete_message(origin.chat.id, origin.id).await?;
+                    users.remove(&origin.id);
+                }
+                _ => {
+                    bot.answer_callback_query(callback.id)
+                        .text(format!("未知命令：{}", &callback_data[6..]))
+                        .show_alert(true)
+                        .await?;
+                }
+            }
+        } else {
+            bot.answer_callback_query(callback.id)
+                .text("只有管理员可以点击此按钮")
+                .show_alert(true)
+                .await?;
+        }
+
+        return Ok(());
+    }
 
     if callback.from.id != data.user_id {
         if callback_data == data.correct.to_string() {
