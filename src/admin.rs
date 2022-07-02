@@ -90,7 +90,15 @@ pub async fn send_auth(bot: Bot, user: User, chat: Chat) -> Result<()> {
     let msg = bot
         .send_message(
             chat.id,
-            format!("你有 5 分钟时间回答以下问题：\n\n{}", title),
+            format!(
+                "[{}](tg://user?id={})，你有 5 分钟时间回答以下问题：\n\n{}",
+                user.username
+                    .as_ref()
+                    .map(ToOwned::to_owned)
+                    .unwrap_or_else(|| user.full_name()),
+                user.id,
+                title
+            ),
         )
         .parse_mode(ParseMode::MarkdownV2)
         .reply_markup(ReplyMarkup::InlineKeyboard(keyboard))
