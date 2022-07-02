@@ -140,15 +140,27 @@ pub async fn callback(bot: Bot, callback: CallbackQuery) -> Result<()> {
         return Ok(());
     };
 
+    let callback_data = callback.data.unwrap();
+
     if callback.from.id != data.user_id {
-        bot.answer_callback_query(callback.id)
-            .text("别抢别人的屎！")
-            .show_alert(true)
-            .await?;
+        if callback_data == data.correct.to_string() {
+            bot.answer_callback_query(callback.id)
+                .text("回答正确！但是并不会奖励屎给你。")
+                .show_alert(true)
+                .await?;
+        } else if callback_data == "IDK" {
+            bot.answer_callback_query(callback.id)
+                .text("不会就别点！")
+                .show_alert(true)
+                .await?;
+        } else {
+            bot.answer_callback_query(callback.id)
+                .text("回答错误！")
+                .show_alert(true)
+                .await?;
+        }
         return Ok(());
     }
-
-    let callback_data = callback.data.unwrap();
 
     if callback_data == data.correct.to_string() {
         bot.answer_callback_query(callback.id).await?;
