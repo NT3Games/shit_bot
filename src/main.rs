@@ -1,5 +1,6 @@
 #![feature(const_btree_new)]
 use anyhow::Result;
+use log::debug;
 use redis::AsyncCommands;
 use serde::Deserialize;
 use teloxide::{
@@ -73,7 +74,9 @@ async fn main() -> Result<()> {
                         Ok(())
                     },
                 ))
-                .branch(Message::filter_pinned().endpoint(auto_unpin))
+                .branch(
+                    dptree::filter(|msg: Message| msg.is_automatic_forward()).endpoint(auto_unpin),
+                )
                 .branch(
                     dptree::entry()
                         .filter_command::<Command>()
@@ -366,10 +369,6 @@ async fn replace_send(
 }
 
 async fn auto_unpin(bot: Bot, message: Message) -> Result<()> {
-    if !message.is_automatic_forward() {
-        return Ok(());
-    }
-
     let res = bot
         .unpin_chat_message(message.chat.id)
         .message_id(message.id)
