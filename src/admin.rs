@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, iter};
+use std::collections::BTreeMap;
 
 use anyhow::Result;
 use chrono::{offset::Utc, Duration};
@@ -69,23 +69,23 @@ pub fn new_question() -> (&'static String, Vec<&'static String>, usize) {
     (&question.title, buttons, correct_idx)
 }
 
-pub fn keyboard<S, I>(buttons: Vec<S>, addition: I) -> InlineKeyboardMarkup
+pub fn keyboard<S>(buttons: Vec<S>, change: bool) -> InlineKeyboardMarkup
 where
     S: Into<String>,
-    I: IntoIterator<Item = InlineKeyboardButton>,
 {
-    InlineKeyboardMarkup::default()
-        .append_row(
-            buttons
-                .into_iter()
-                .enumerate()
-                .map(|(idx, text)| InlineKeyboardButton::callback(text, idx.to_string()))
-                .chain(addition),
-        )
-        .append_row(vec![
-            InlineKeyboardButton::callback("手动踢出", "admin-ban"),
-            InlineKeyboardButton::callback("手动通过", "admin-allow"),
-        ])
+    let mut keyboard = InlineKeyboardMarkup::new(
+        buttons
+            .into_iter()
+            .enumerate()
+            .map(|(idx, text)| vec![InlineKeyboardButton::callback(text, idx.to_string())]),
+    );
+    if change {
+        keyboard = keyboard.append_row(vec![InlineKeyboardButton::callback("换题🔁", "change")])
+    }
+    keyboard.append_row(vec![
+        InlineKeyboardButton::callback("手动踢出🚫", "admin-ban"),
+        InlineKeyboardButton::callback("手动通过✅", "admin-allow"),
+    ])
 }
 
 pub async fn send_auth(bot: Bot, user: User, chat: Chat) -> Result<()> {
@@ -100,10 +100,7 @@ pub async fn send_auth(bot: Bot, user: User, chat: Chat) -> Result<()> {
         return Err(err.into());
     }
 
-    let keyboard = keyboard(
-        buttons,
-        iter::once(InlineKeyboardButton::callback("换题", "IDK")),
-    );
+    let keyboard = keyboard(buttons, true);
 
     let mut users = UNVERIFIED_USERS.lock().await;
 
@@ -293,7 +290,7 @@ pub async fn callback(bot: Bot, callback: CallbackQuery) -> Result<()> {
                 .text("回答正确！但是并不会奖励屎给你。")
                 .show_alert(true)
                 .await?;
-        } else if callback_data == "IDK" {
+        } else if callback_data == "change" {
             bot.answer_callback_query(callback.id)
                 .text("不会就别点！")
                 .show_alert(true)
@@ -334,9 +331,9 @@ pub async fn callback(bot: Bot, callback: CallbackQuery) -> Result<()> {
         }
 
         users.remove(&origin.id);
-    } else if callback_data == "IDK" {
+    } else if callback_data == "change" {
         let (title, buttons, correct_idx) = new_question();
-        let keyboard = keyboard(buttons, iter::empty());
+        let keyboard = keyboard(buttons, false);
         bot.edit_message_text(origin.chat.id, origin.id, title)
             .reply_markup(keyboard)
             .await?;
