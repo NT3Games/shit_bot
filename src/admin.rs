@@ -1,28 +1,32 @@
-use std::collections::BTreeMap;
+use std::collections::{
+    btree_map::{self, OccupiedEntry},
+    BTreeMap,
+};
 
 use anyhow::Result;
-use chrono::{offset::Utc, Duration};
+use chrono::{offset::Utc, DateTime, Duration};
 use rand::{prelude::SliceRandom, thread_rng, Rng};
+use redis::AsyncCommands;
 use reqwest::Url;
 use serde::Deserialize;
 use teloxide::{
-    payloads::{
-        AnswerCallbackQuerySetters, BanChatMemberSetters, EditMessageTextSetters,
-        SendMessageSetters,
-    },
-    prelude::Requester,
+    payloads::{AnswerCallbackQuerySetters, EditMessageTextSetters, SendMessageSetters},
+    prelude::*,
     types::{
-        CallbackQuery, Chat, ChatMember, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode,
-        ReplyMarkup, User, UserId,
+        CallbackQuery, Chat, ChatId, ChatMember, InlineKeyboardButton, InlineKeyboardMarkup,
+        ParseMode, ReplyMarkup, User, UserId,
     },
 };
 use tokio::{sync::Mutex, time::sleep};
 
 use crate::{Bot, CONFIG};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+const LAST_JOIN_RESULT_KEY: &str = "shit_bot_last_join_result";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct QueryData {
-    pub user_id: UserId,
+    pub user: User,
+    pub chat_id: ChatId,
     pub correct: usize,
     pub tried_times: u8,
     pub cas: Option<i32>, // i32 is message id
@@ -120,7 +124,8 @@ pub async fn send_auth(bot: Bot, user: User, chat: Chat) -> Result<()> {
     users.insert(
         msg.id,
         QueryData {
-            user_id: user.id,
+            user: user.clone(),
+            chat_id: chat.id,
             correct: correct_idx,
             tried_times: 0,
             cas: None,
@@ -132,69 +137,61 @@ pub async fn send_auth(bot: Bot, user: User, chat: Chat) -> Result<()> {
         let bot = bot2;
         sleep(std::time::Duration::from_secs(5 * 60)).await;
         let mut users = UNVERIFIED_USERS.lock().await;
-        if let Some(_data) = users.get_mut(&msg.id) {
-            let res = bot
-                .ban_chat_member(chat.id, user.id)
-                .until_date(Utc::now() + Duration::minutes(10))
-                .await;
-            if let Err(err) = res {
-                bot.send_message(chat.id, err.to_string()).await.ok();
-            }
-
-            let res = bot.delete_message(chat.id, msg.id).await;
-            if let Err(err) = res {
-                bot.send_message(chat.id, err.to_string()).await.ok();
-            }
-
-            users.remove(&msg.id);
+        if let btree_map::Entry::Occupied(data) = users.entry(msg.id) {
+            ban(bot, data, Some(Utc::now() + Duration::minutes(10)))
+                .await
+                .ok();
         }
     });
 
     let bot2 = bot.clone();
-    tokio::spawn(async move {
-        let bot = bot2;
-        let ok = reqwest::get(Url::parse_with_params(
-            "https://api.cas.chat/check",
-            &[("user_id", user.id.to_string())],
-        )?)
-        .await?
-        .json::<CasResult>()
-        .await?
-        .ok;
+    tokio::spawn(check_cas(bot2, chat.id, user.id, msg.id));
 
-        if ok {
-            let mut users = UNVERIFIED_USERS.lock().await;
+    Ok(())
+}
 
-            let user = if let Some(user) = users.get_mut(&msg.id) {
-                user
-            } else {
-                return Ok(());
-            };
+async fn check_cas(bot: Bot, chat_id: ChatId, user_id: UserId, msg_id: i32) -> Result<()> {
+    let ok = reqwest::get(Url::parse_with_params(
+        "https://api.cas.chat/check",
+        &[("user_id", user_id.to_string())],
+    )?)
+    .await?
+    .json::<CasResult>()
+    .await?
+    .ok;
 
-            let keyboard =
-                InlineKeyboardMarkup::default().append_row(vec![InlineKeyboardButton::callback(
-                    "确认踢出",
-                    "admin-ban",
-                )]);
-            let res = bot
-                .send_message(
-                    chat.id,
-                    format!(
-                        "⚠️管理员注意，[该用户已被 CAS 封禁](https://cas.chat/query?u={})",
-                        user.user_id
-                    ),
-                )
-                .reply_to_message_id(msg.id)
-                .parse_mode(ParseMode::MarkdownV2)
-                .reply_markup(keyboard)
-                .disable_web_page_preview(true)
-                .await?;
+    if !ok {
+        return Ok(());
+    }
 
-            user.cas = Some(res.id);
-        }
+    let mut users = UNVERIFIED_USERS.lock().await;
 
-        anyhow::Ok(())
-    });
+    let user = if let Some(user) = users.get_mut(&msg_id) {
+        user
+    } else {
+        return Ok(());
+    };
+
+    let keyboard =
+        InlineKeyboardMarkup::default().append_row(vec![InlineKeyboardButton::callback(
+            "确认踢出",
+            "admin-ban",
+        )]);
+    let res = bot
+        .send_message(
+            chat_id,
+            format!(
+                "⚠️管理员注意，[该用户已被 CAS 封禁](https://cas.chat/query?u={})",
+                user.user.id
+            ),
+        )
+        .reply_to_message_id(msg_id)
+        .parse_mode(ParseMode::MarkdownV2)
+        .reply_markup(keyboard)
+        .disable_web_page_preview(true)
+        .await?;
+
+    user.cas = Some(res.id);
 
     Ok(())
 }
@@ -206,12 +203,13 @@ pub async fn callback(bot: Bot, callback: CallbackQuery) -> Result<()> {
     }
     let origin = callback.message.as_ref().unwrap();
     let mut users = UNVERIFIED_USERS.lock().await;
-    let data = if let Some(data) = users.get_mut(&origin.id) {
+    let mut data_entry = if let btree_map::Entry::Occupied(data) = users.entry(origin.id) {
         data
     } else {
         bot.answer_callback_query(callback.id).await?;
         return Ok(());
     };
+    let data = data_entry.get();
 
     let callback_data = callback.data.unwrap();
 
@@ -230,42 +228,12 @@ pub async fn callback(bot: Bot, callback: CallbackQuery) -> Result<()> {
         if member.is_privileged() {
             match &callback_data[6..] {
                 "ban" => {
-                    let res = bot.ban_chat_member(origin.chat.id, data.user_id).await;
-                    if let Err(err) = res {
-                        bot.answer_callback_query(callback.id)
-                            .text(err.to_string())
-                            .show_alert(true)
-                            .await?;
-                    } else {
-                        bot.answer_callback_query(callback.id).await?;
-                    }
-                    bot.delete_message(origin.chat.id, origin.id).await?;
-                    if let Some(cas) = data.cas {
-                        bot.delete_message(origin.chat.id, cas).await?;
-                    }
-                    users.remove(&origin.id);
+                    bot.answer_callback_query(callback.id).await?;
+                    ban(bot, data_entry, None).await?;
                 }
                 "allow" => {
-                    let res = bot
-                        .restrict_chat_member(
-                            origin.chat.id,
-                            data.user_id,
-                            teloxide::types::ChatPermissions::all(),
-                        )
-                        .await;
-                    if let Err(err) = res {
-                        bot.answer_callback_query(callback.id)
-                            .text(err.to_string())
-                            .show_alert(true)
-                            .await?;
-                    } else {
-                        bot.answer_callback_query(callback.id).await?;
-                    }
-                    bot.delete_message(origin.chat.id, origin.id).await?;
-                    if let Some(cas) = data.cas {
-                        bot.delete_message(origin.chat.id, cas).await?;
-                    }
-                    users.remove(&origin.id);
+                    bot.answer_callback_query(callback.id).await?;
+                    allow(bot, data_entry, false).await?;
                 }
                 _ => {
                     bot.answer_callback_query(callback.id)
@@ -284,7 +252,7 @@ pub async fn callback(bot: Bot, callback: CallbackQuery) -> Result<()> {
         return Ok(());
     }
 
-    if callback.from.id != data.user_id {
+    if callback.from.id != data.user.id {
         if callback_data == data.correct.to_string() {
             bot.answer_callback_query(callback.id)
                 .text("回答正确！但是并不会奖励屎给你。")
@@ -306,75 +274,131 @@ pub async fn callback(bot: Bot, callback: CallbackQuery) -> Result<()> {
 
     if callback_data == data.correct.to_string() {
         bot.answer_callback_query(callback.id).await?;
-        let res = bot
-            .restrict_chat_member(
-                origin.chat.id,
-                data.user_id,
-                teloxide::types::ChatPermissions::all(),
-            )
-            .await;
-        if let Err(err) = res {
-            bot.send_message(origin.chat.id, err.to_string()).await?;
-            return Err(err.into());
-        }
-        bot.delete_message(origin.chat.id, origin.id).await?;
-
-        if let Some(cas) = data.cas {
-            let text = format!(
-                "⚠️管理员注意，[CAS 封禁用户](https://cas.chat/query?u={}) {} 已通过验证加入群组",
-                data.user_id,
-                metion_user(&callback.from)
-            );
-            bot.edit_message_text(origin.chat.id, cas, text)
-                .reply_markup(InlineKeyboardMarkup::default())
-                .await?;
-        }
-
-        users.remove(&origin.id);
+        allow(bot, data_entry, true).await?;
     } else if callback_data == "change" {
         let (title, buttons, correct_idx) = new_question();
         let keyboard = keyboard(buttons, false);
         bot.edit_message_text(origin.chat.id, origin.id, title)
             .reply_markup(keyboard)
             .await?;
-        data.correct = correct_idx;
+        data_entry.get_mut().correct = correct_idx;
     } else {
-        if let Some(cas) = data.cas {
+        if data.cas.is_some() {
             bot.answer_callback_query(callback.id)
                 .text("验证失败")
                 .show_alert(true)
                 .await?;
-            let res = bot.ban_chat_member(origin.chat.id, data.user_id).await;
-            if let Err(err) = res {
-                bot.send_message(origin.chat.id, err.to_string()).await?;
-                return Err(err.into());
-            }
-            bot.delete_message(origin.chat.id, origin.id).await?;
-            bot.delete_message(origin.chat.id, cas).await?;
-            users.remove(&origin.id);
+
+            ban(bot.clone(), data_entry, None).await?;
         } else if data.tried_times >= 2 {
             bot.answer_callback_query(callback.id)
                 .text("验证失败，失败次数过多，请十分钟后重新加入")
                 .show_alert(true)
                 .await?;
-            let res = bot
-                .ban_chat_member(origin.chat.id, data.user_id)
-                .until_date(Utc::now() + Duration::minutes(10))
-                .await;
-            if let Err(err) = res {
-                bot.send_message(origin.chat.id, err.to_string()).await?;
-                return Err(err.into());
-            }
-            bot.delete_message(origin.chat.id, origin.id).await?;
-            users.remove(&origin.id);
+
+            ban(
+                bot.clone(),
+                data_entry,
+                Some(Utc::now() + Duration::minutes(10)),
+            )
+            .await?;
         } else {
             bot.answer_callback_query(callback.id)
                 .text("验证失败")
                 .show_alert(true)
                 .await?;
-            data.tried_times += 1;
+            data_entry.get_mut().tried_times += 1;
         }
         return Ok(());
+    }
+
+    Ok(())
+}
+
+async fn ban(
+    bot: Bot,
+    entry: OccupiedEntry<'_, i32, QueryData>,
+    until_date: Option<DateTime<Utc>>,
+) -> Result<()> {
+    let (msg_id, data) = entry.remove_entry();
+
+    let mut req = bot.inner().ban_chat_member(data.chat_id, data.user.id);
+    req.until_date = until_date;
+    let res = req.send().await;
+    if let Err(err) = res {
+        bot.send_message(data.chat_id, err.to_string()).await?;
+        return Err(err.into());
+    }
+    bot.delete_message(data.chat_id, msg_id).await?;
+    if let Some(cas) = data.cas {
+        bot.delete_message(data.chat_id, cas).await?;
+    }
+
+    send_join_result(
+        bot,
+        data.chat_id,
+        format!("{} 验证失败，被扔进化粪池里了！", metion_user(&data.user)),
+    )
+    .await?;
+
+    Ok(())
+}
+
+async fn allow(bot: Bot, entry: OccupiedEntry<'_, i32, QueryData>, remain_cas: bool) -> Result<()> {
+    let (msg_id, data) = entry.remove_entry();
+
+    let res = bot
+        .restrict_chat_member(
+            data.chat_id,
+            data.user.id,
+            teloxide::types::ChatPermissions::all(),
+        )
+        .await;
+    if let Err(err) = res {
+        bot.send_message(data.chat_id, err.to_string()).await?;
+        return Err(err.into());
+    }
+    bot.delete_message(data.chat_id, msg_id).await?;
+
+    if let Some(cas) = data.cas {
+        if remain_cas {
+            let text = format!(
+                "⚠️管理员注意，[CAS 封禁用户](https://cas.chat/query?u={}) {} 已通过验证加入群组",
+                data.user.id,
+                metion_user(&data.user)
+            );
+            bot.edit_message_text(data.chat_id, cas, text)
+                .reply_markup(InlineKeyboardMarkup::default())
+                .await?;
+        } else {
+            bot.delete_message(data.chat_id, cas).await?;
+        }
+    }
+
+    send_join_result(
+        bot,
+        data.chat_id,
+        format!("{} 验证通过，欢迎！", metion_user(&data.user)),
+    )
+    .await?;
+
+    Ok(())
+}
+
+async fn send_join_result(bot: Bot, chat_id: ChatId, message: String) -> Result<()> {
+    let res = bot
+        .send_message(chat_id, message)
+        .parse_mode(ParseMode::MarkdownV2)
+        .disable_web_page_preview(true)
+        .await?;
+
+    let mut con = crate::get_client().await.get_async_connection().await?;
+    let last: Option<i32> = con
+        .get(format!("{}/{}", LAST_JOIN_RESULT_KEY, chat_id))
+        .await?;
+    con.set(LAST_JOIN_RESULT_KEY, res.id).await?;
+    if let Some(id) = last {
+        bot.delete_message(chat_id, id).await?;
     }
 
     Ok(())
