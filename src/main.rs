@@ -21,14 +21,7 @@ pub struct Config {
     pub to_chat: ChatId,
     pub listen_chat: ChatId,
     pub watch_list: Vec<UserId>,
-    pub questions: Vec<Question>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct Question {
-    pub title: String,
-    pub wrong: Vec<String>,
-    pub correct: Vec<String>,
+    pub questions: Vec<admin::Question>,
 }
 
 static CLIENT: OnceCell<redis::Client> = OnceCell::const_new();

@@ -23,6 +23,14 @@ use crate::{Bot, CONFIG};
 
 const LAST_JOIN_RESULT_KEY: &str = "shit_bot_last_join_result";
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct Question {
+    pub title: String,
+    pub revert: Option<String>,
+    pub wrong: Vec<String>,
+    pub correct: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct QueryData {
     pub user: User,
@@ -59,18 +67,26 @@ pub fn new_question() -> (&'static String, Vec<&'static String>, usize) {
         .questions
         .choose(&mut rng)
         .expect("no question");
-    let correct = question
-        .correct
-        .choose(&mut rng)
-        .expect("no correct answer");
-    let mut buttons = question
-        .wrong
+
+    let (title, correct_answers, wrong_answers) = if question.revert.is_some() && rng.gen_bool(0.5)
+    {
+        (
+            question.revert.as_ref().unwrap(),
+            &question.wrong,
+            &question.correct,
+        )
+    } else {
+        (&question.title, &question.correct, &question.wrong)
+    };
+
+    let correct = correct_answers.choose(&mut rng).expect("no correct answer");
+    let mut buttons = wrong_answers
         .choose_multiple(&mut rng, 3)
         .collect::<Vec<_>>();
     let correct_idx = rng.gen_range(0..=buttons.len());
     buttons.insert(correct_idx, correct);
 
-    (&question.title, buttons, correct_idx)
+    (title, buttons, correct_idx)
 }
 
 pub fn keyboard<S>(buttons: Vec<S>, change: bool) -> InlineKeyboardMarkup
