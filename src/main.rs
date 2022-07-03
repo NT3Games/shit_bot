@@ -98,15 +98,16 @@ async fn main() -> Result<()> {
                         }
                     })
                     .endpoint(forward_shit),
-                )
-                .branch(
-                    dptree::filter(|msg: Message| msg.chat.id == CONFIG.get().unwrap().to_chat)
-                        .endpoint(|_bot: Bot, message: Message| async move {
-                            let mut con = get_client().await.get_async_connection().await?;
-                            con.set(LAST_SHIT_KEY, message.id).await?;
-                            Ok(())
-                        }),
                 ),
+        )
+        .branch(
+            Update::filter_channel_post().endpoint(|_bot: Bot, msg: Message| async move {
+                if msg.chat.id == CONFIG.get().unwrap().to_chat {
+                    let mut con = get_client().await.get_async_connection().await?;
+                    con.set(LAST_SENT_KEY, msg.id).await?;
+                }
+                Ok(())
+            }),
         )
         .branch(
             Update::filter_edited_message().branch(
