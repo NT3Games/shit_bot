@@ -124,7 +124,7 @@ pub async fn send_auth(bot: Bot, user: User, chat: Chat) -> Result<()> {
 
     let mut users = UNVERIFIED_USERS.lock().await;
 
-    let msg = bot
+    let res = bot
         .send_message(
             chat.id,
             format!(
@@ -135,7 +135,27 @@ pub async fn send_auth(bot: Bot, user: User, chat: Chat) -> Result<()> {
         )
         .parse_mode(ParseMode::MarkdownV2)
         .reply_markup(ReplyMarkup::InlineKeyboard(keyboard))
-        .await?;
+        .await;
+
+    let msg: Message = match res {
+        Ok(msg) => msg,
+        Err(err) => {
+            bot.send_message(chat.id, format!("问题发送失败，自动允许加入\n{}", err))
+                .await?;
+            let res = bot
+                .restrict_chat_member(chat.id, user.id, teloxide::types::ChatPermissions::all())
+                .await;
+            if let Err(err) = res {
+                bot.send_message(
+                    chat.id,
+                    format!("⚠️管理员注意！解除禁言失败，请管理员手动解除\n{}", err),
+                )
+                .await?;
+                return Err(err.into());
+            }
+            return Err(err.into());
+        }
+    };
 
     users.insert(
         msg.id,
@@ -371,7 +391,11 @@ async fn allow(bot: Bot, entry: OccupiedEntry<'_, i32, QueryData>, remain_cas: b
         )
         .await;
     if let Err(err) = res {
-        bot.send_message(data.chat_id, err.to_string()).await?;
+        bot.send_message(
+            data.chat_id,
+            format!("⚠️管理员注意！解除禁言失败，请管理员手动解除\n{}", err),
+        )
+        .await?;
         return Err(err.into());
     }
     bot.delete_message(data.chat_id, msg_id).await?;
