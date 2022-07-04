@@ -50,12 +50,12 @@ static UNVERIFIED_USERS: Mutex<BTreeMap<i32, QueryData>> = Mutex::const_new(BTre
 
 pub fn metion_user(user: &User) -> String {
     if let Some(username) = user.username.as_ref() {
-        format!("<a href=\"tg://user?id={}\">@{}</a>", username, user.id)
+        format!("<a href=\"tg://user?id={}\">@{}</a>", user.id, username)
     } else {
         format!(
             "<a href=\"tg://user?id={}\">{}</a>",
-            htmlescape::encode_minimal(&user.full_name()),
             user.id,
+            htmlescape::encode_minimal(&user.full_name()),
         )
     }
 }
