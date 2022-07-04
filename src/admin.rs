@@ -49,14 +49,15 @@ struct CasResult {
 static UNVERIFIED_USERS: Mutex<BTreeMap<i32, QueryData>> = Mutex::const_new(BTreeMap::new());
 
 pub fn metion_user(user: &User) -> String {
-    format!(
-        "[{}](tg://user?id={})",
-        user.username
-            .as_ref()
-            .map(ToOwned::to_owned)
-            .unwrap_or_else(|| user.full_name()),
-        user.id,
-    )
+    if let Some(username) = user.username.as_ref() {
+        format!("<a href=\"tg://user?id={}\">@{}</a>", username, user.id)
+    } else {
+        format!(
+            "<a href=\"tg://user?id={}\">{}</a>",
+            htmlescape::encode_minimal(&user.full_name()),
+            user.id,
+        )
+    }
 }
 
 pub fn new_question() -> (&'static String, Vec<&'static String>, usize) {
@@ -133,7 +134,7 @@ pub async fn send_auth(bot: Bot, user: User, chat: Chat) -> Result<()> {
                 title
             ),
         )
-        .parse_mode(ParseMode::MarkdownV2)
+        .parse_mode(ParseMode::Html)
         .reply_markup(ReplyMarkup::InlineKeyboard(keyboard))
         .await;
 
@@ -217,12 +218,12 @@ async fn check_cas(bot: Bot, chat_id: ChatId, user_id: UserId, msg_id: i32) -> R
         .send_message(
             chat_id,
             format!(
-                "⚠️管理员注意，[该用户已被 CAS 封禁](https://cas.chat/query?u={})",
+                "⚠️管理员注意，<a href=\"https://cas.chat/query?u={}\">该用户已被 CAS 封禁</a>",
                 user.user.id
             ),
         )
         .reply_to_message_id(msg_id)
-        .parse_mode(ParseMode::MarkdownV2)
+        .parse_mode(ParseMode::Html)
         .reply_markup(keyboard)
         .disable_web_page_preview(true)
         .await?;
@@ -403,7 +404,7 @@ async fn allow(bot: Bot, entry: OccupiedEntry<'_, i32, QueryData>, remain_cas: b
     if let Some(cas) = data.cas {
         if remain_cas {
             let text = format!(
-                "⚠️管理员注意，[CAS 封禁用户](https://cas.chat/query?u={}) {} 已通过验证加入群组",
+                "⚠️管理员注意，<a href=\"https://cas.chat/query?u={}\">CAS 封禁用户</a> {} 已通过验证加入群组",
                 data.user.id,
                 metion_user(&data.user)
             );
@@ -428,7 +429,7 @@ async fn allow(bot: Bot, entry: OccupiedEntry<'_, i32, QueryData>, remain_cas: b
 async fn send_join_result(bot: Bot, chat_id: ChatId, message: String) -> Result<()> {
     let res = bot
         .send_message(chat_id, message)
-        .parse_mode(ParseMode::MarkdownV2)
+        .parse_mode(ParseMode::Html)
         .disable_web_page_preview(true)
         .await?;
 
