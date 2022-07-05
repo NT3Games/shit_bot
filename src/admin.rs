@@ -109,7 +109,28 @@ where
     ])
 }
 
+fn rank_user(user: &User) -> f64 {
+    if user.first_name.contains("免费")
+        || user.first_name.contains("VPN")
+        || user.first_name.contains("梯子")
+    {
+        return 0.0;
+    }
+    // if user.is_premium {
+    //     return 1.0;
+    // }
+    let mut result = 0.4;
+    if user.username.is_some() {
+        result += 0.3;
+    }
+    result
+}
+
 pub async fn send_auth(bot: Bot, user: User, chat: Chat) -> Result<()> {
+    if user.is_bot {
+        return Ok(());
+    }
+
     let (title, buttons, correct_idx) = new_question();
 
     // mute user
@@ -339,6 +360,12 @@ pub async fn callback(bot: Bot, callback: CallbackQuery) -> Result<()> {
                 Some(Utc::now() + Duration::minutes(10)),
             )
             .await?;
+        } else if data.tried_times == 0 && thread_rng().gen_bool(rank_user(&data.user)) {
+            bot.answer_callback_query(callback.id)
+                .text("尽管你回答错误了，但我们还是允许你加入。")
+                .show_alert(true)
+                .await?;
+            allow(bot, data_entry, true).await?;
         } else {
             bot.answer_callback_query(callback.id)
                 .text("验证失败")
