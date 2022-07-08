@@ -58,8 +58,13 @@ async fn main() -> Result<()> {
                     |bot: Bot, msg: Message| async move {
                         if let Some(users) = msg.new_chat_members() {
                             for user in users {
-                                admin::send_auth(bot.clone(), user.to_owned(), msg.chat.clone())
-                                    .await?;
+                                admin::send_auth(
+                                    bot.clone(),
+                                    user.to_owned(),
+                                    msg.chat.clone(),
+                                    msg.id,
+                                )
+                                .await?;
                             }
                         }
 

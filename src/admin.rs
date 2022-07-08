@@ -35,6 +35,7 @@ pub struct Question {
 struct QueryData {
     pub user: User,
     pub chat_id: ChatId,
+    pub new_member_id: i32,
     pub correct: usize,
     pub tried_times: u8,
     pub cas: Option<i32>, // i32 is message id
@@ -126,7 +127,7 @@ fn rank_user(user: &User) -> f64 {
     result
 }
 
-pub async fn send_auth(bot: Bot, user: User, chat: Chat) -> Result<()> {
+pub async fn send_auth(bot: Bot, user: User, chat: Chat, new_member_id: i32) -> Result<()> {
     if user.is_bot {
         return Ok(());
     }
@@ -184,6 +185,7 @@ pub async fn send_auth(bot: Bot, user: User, chat: Chat) -> Result<()> {
         QueryData {
             user: user.clone(),
             chat_id: chat.id,
+            new_member_id,
             correct: correct_idx,
             tried_times: 0,
             cas: None,
@@ -394,6 +396,7 @@ async fn ban(
         return Err(err.into());
     }
     bot.delete_message(data.chat_id, msg_id).await?;
+    bot.delete_message(data.chat_id, data.new_member_id).await?;
     if let Some(cas) = data.cas {
         bot.delete_message(data.chat_id, cas).await?;
     }
