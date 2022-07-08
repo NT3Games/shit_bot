@@ -4,7 +4,7 @@ listen_chat: -100              # the working chat
 watch_list: [0]                # the people allowed to automatic forward
 questions:
   - title: 二加二等于几
-    title: 二加二不等于几 # optional
+    contrary: 二加二不等于几 # optional
     correct:            # show excetly one of them
       - 四
       - 4

@@ -26,7 +26,7 @@ const LAST_JOIN_RESULT_KEY: &str = "shit_bot_last_join_result";
 #[derive(Debug, Clone, Deserialize)]
 pub struct Question {
     pub title: String,
-    pub revert: Option<String>,
+    pub contrary: Option<String>,
     pub wrong: Vec<String>,
     pub correct: Vec<String>,
 }
@@ -69,16 +69,16 @@ pub fn new_question() -> (&'static String, Vec<&'static String>, usize) {
         .choose(&mut rng)
         .expect("no question");
 
-    let (title, correct_answers, wrong_answers) = if question.revert.is_some() && rng.gen_bool(0.5)
-    {
-        (
-            question.revert.as_ref().unwrap(),
-            &question.wrong,
-            &question.correct,
-        )
-    } else {
-        (&question.title, &question.correct, &question.wrong)
-    };
+    let (title, correct_answers, wrong_answers) =
+        if question.contrary.is_some() && rng.gen_bool(0.5) {
+            (
+                question.contrary.as_ref().unwrap(),
+                &question.wrong,
+                &question.correct,
+            )
+        } else {
+            (&question.title, &question.correct, &question.wrong)
+        };
 
     let correct = correct_answers.choose(&mut rng).expect("no correct answer");
     let mut buttons = wrong_answers
