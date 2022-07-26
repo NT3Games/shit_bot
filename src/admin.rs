@@ -110,11 +110,12 @@ where
     ])
 }
 
+fn is_spam_name(name: &str) -> bool {
+    name.contains("免费") || name.contains("VPN") || name.contains("梯子")
+}
+
 fn rank_user(user: &User) -> f64 {
-    if user.first_name.contains("免费")
-        || user.first_name.contains("VPN")
-        || user.first_name.contains("梯子")
-    {
+    if is_spam_name(&user.full_name()) {
         return 0.0;
     }
     // if user.is_premium {
@@ -401,12 +402,12 @@ async fn ban(
         bot.delete_message(data.chat_id, cas).await?;
     }
 
-    send_join_result(
-        bot,
-        data.chat_id,
-        format!("{} 验证失败，被扔进化粪池里了！", metion_user(&data.user)),
-    )
-    .await?;
+    let message = if is_spam_name(&data.user.full_name()) {
+        "<filtered> 验证失败！".to_string()
+    } else {
+        format!("{} 验证失败，被扔进化粪池里了！", metion_user(&data.user))
+    };
+    send_join_result(bot, data.chat_id, message).await?;
 
     Ok(())
 }
