@@ -115,12 +115,12 @@ fn is_spam_name(name: &str) -> bool {
 }
 
 fn rank_user(user: &User) -> f64 {
+    if user.is_premium {
+        return 1.0;
+    }
     if is_spam_name(&user.full_name()) {
         return 0.0;
     }
-    // if user.is_premium {
-    //     return 1.0;
-    // }
     let mut result = 0.4;
     if user.username.is_some() {
         result += 0.3;
