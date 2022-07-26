@@ -133,6 +133,17 @@ pub async fn send_auth(bot: Bot, user: User, chat: Chat, new_member_id: i32) -> 
         return Ok(());
     }
 
+    if user.is_premium {
+        bot.send_message(
+            chat.id,
+            format!("Premium 用户 {}，欢迎！", metion_user(&user)),
+        )
+        .parse_mode(ParseMode::Html)
+        .await?;
+
+        return Ok(());
+    }
+
     let (title, buttons, correct_idx) = new_question();
 
     // mute user
