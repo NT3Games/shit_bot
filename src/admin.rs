@@ -14,7 +14,7 @@ use teloxide::{
     prelude::*,
     types::{
         CallbackQuery, Chat, ChatId, ChatMember, InlineKeyboardButton, InlineKeyboardMarkup,
-        ParseMode, ReplyMarkup, User, UserId,
+        ParseMode, User, UserId,
     },
 };
 use tokio::{sync::Mutex, time::sleep};
@@ -37,8 +37,38 @@ struct QueryData {
     pub chat_id: ChatId,
     pub new_member_id: i32,
     pub correct: usize,
+    pub title: &'static str,
+    pub options: Vec<&'static String>,
     pub tried_times: u8,
     pub cas: Option<i32>, // i32 is message id
+    pub left_minutes: u8,
+}
+
+impl QueryData {
+    pub fn message(&self) -> String {
+        format!(
+            "{}，你有 {} 分钟时间回答以下问题：\n\n{}",
+            metion_user(&self.user),
+            self.left_minutes,
+            self.title
+        )
+    }
+
+    pub fn keyboard(&self, change: bool) -> InlineKeyboardMarkup {
+        let mut keyboard = InlineKeyboardMarkup::new(
+            self.options
+                .iter()
+                .enumerate()
+                .map(|(idx, &text)| vec![InlineKeyboardButton::callback(text, idx.to_string())]),
+        );
+        if change {
+            keyboard = keyboard.append_row(vec![InlineKeyboardButton::callback("换题🔁", "change")])
+        }
+        keyboard.append_row(vec![
+            InlineKeyboardButton::callback("手动踢出🚫", "admin-ban"),
+            InlineKeyboardButton::callback("手动通过✅", "admin-allow"),
+        ])
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -91,25 +121,6 @@ pub fn new_question() -> (&'static String, Vec<&'static String>, usize) {
     (title, buttons, correct_idx)
 }
 
-pub fn keyboard<S>(buttons: Vec<S>, change: bool) -> InlineKeyboardMarkup
-where
-    S: Into<String>,
-{
-    let mut keyboard = InlineKeyboardMarkup::new(
-        buttons
-            .into_iter()
-            .enumerate()
-            .map(|(idx, text)| vec![InlineKeyboardButton::callback(text, idx.to_string())]),
-    );
-    if change {
-        keyboard = keyboard.append_row(vec![InlineKeyboardButton::callback("换题🔁", "change")])
-    }
-    keyboard.append_row(vec![
-        InlineKeyboardButton::callback("手动踢出🚫", "admin-ban"),
-        InlineKeyboardButton::callback("手动通过✅", "admin-allow"),
-    ])
-}
-
 fn is_spam_name(name: &str) -> bool {
     name.contains("免费") || name.contains("VPN") || name.contains("梯子")
 }
@@ -144,7 +155,7 @@ pub async fn send_auth(bot: Bot, user: User, chat: Chat, new_member_id: i32) -> 
         return Ok(());
     }
 
-    let (title, buttons, correct_idx) = new_question();
+    let (title, options, correct_idx) = new_question();
 
     // mute user
     let res = bot
@@ -155,21 +166,24 @@ pub async fn send_auth(bot: Bot, user: User, chat: Chat, new_member_id: i32) -> 
         return Err(err.into());
     }
 
-    let keyboard = keyboard(buttons, true);
+    let data = QueryData {
+        user: user.clone(),
+        chat_id: chat.id,
+        new_member_id,
+        title,
+        options,
+        correct: correct_idx,
+        tried_times: 0,
+        cas: None,
+        left_minutes: 5,
+    };
 
     let mut users = UNVERIFIED_USERS.lock().await;
 
     let res = bot
-        .send_message(
-            chat.id,
-            format!(
-                "{}，你有 5 分钟时间回答以下问题：\n\n{}",
-                metion_user(&user),
-                title
-            ),
-        )
+        .send_message(chat.id, data.message())
         .parse_mode(ParseMode::Html)
-        .reply_markup(ReplyMarkup::InlineKeyboard(keyboard))
+        .reply_markup(data.keyboard(true))
         .await;
 
     let msg: Message = match res {
@@ -192,22 +206,31 @@ pub async fn send_auth(bot: Bot, user: User, chat: Chat, new_member_id: i32) -> 
         }
     };
 
-    users.insert(
-        msg.id,
-        QueryData {
-            user: user.clone(),
-            chat_id: chat.id,
-            new_member_id,
-            correct: correct_idx,
-            tried_times: 0,
-            cas: None,
-        },
-    );
+    users.insert(msg.id, data);
 
     let bot2 = bot.clone();
     tokio::spawn(async move {
         let bot = bot2;
-        sleep(std::time::Duration::from_secs(5 * 60)).await;
+        loop {
+            sleep(std::time::Duration::from_secs(60)).await;
+
+            let mut users = UNVERIFIED_USERS.lock().await;
+            if let btree_map::Entry::Occupied(mut data) = users.entry(msg.id) {
+                data.get_mut().left_minutes -= 1;
+                let data = data.get();
+                if data.left_minutes == 0 {
+                    break;
+                } else {
+                    bot.edit_message_text(data.chat_id, msg.id, data.message())
+                        .reply_markup(data.keyboard(false))
+                        .await
+                        .ok();
+                }
+            } else {
+                break;
+            }
+        }
+
         let mut users = UNVERIFIED_USERS.lock().await;
         if let btree_map::Entry::Occupied(data) = users.entry(msg.id) {
             ban(bot, data, Some(Utc::now() + Duration::minutes(10)))
@@ -348,10 +371,13 @@ pub async fn callback(bot: Bot, callback: CallbackQuery) -> Result<()> {
         bot.answer_callback_query(callback.id).await?;
         allow(bot, data_entry, true).await?;
     } else if callback_data == "change" {
-        let (title, buttons, correct_idx) = new_question();
-        let keyboard = keyboard(buttons, false);
-        bot.edit_message_text(origin.chat.id, origin.id, title)
-            .reply_markup(keyboard)
+        let (title, options, correct_idx) = new_question();
+        let data = data_entry.get_mut();
+        data.correct = correct_idx;
+        data.options = options;
+        data.title = title;
+        bot.edit_message_text(origin.chat.id, origin.id, data.message())
+            .reply_markup(data.keyboard(false))
             .await?;
         data_entry.get_mut().correct = correct_idx;
     } else {
