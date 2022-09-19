@@ -9,18 +9,18 @@ edition = "2021"
 log = "0.4.17"
 pretty_env_logger = "0.4.0"
 teloxide = { version = "0.10.1", features = ["macros"] }
-tokio = { version = "1.20.1", features = [
+tokio = { version = "1.21.1", features = [
   "macros",
   "rt-multi-thread",
   "parking_lot",
 ] }
-redis = { version = "0.21.5", features = [
+redis = { version = "0.21.6", features = [
   "tokio-comp",
 ], default-features = false }
-anyhow = "1.0.58"
-serde = { version = "1.0.140", features = ["serde_derive"] }
-serde_yaml = "0.8.26"
-chrono = "0.4.19"
+anyhow = "1.0.65"
+serde = { version = "1.0.144", features = ["serde_derive"] }
+serde_yaml = "0.9.13"
+chrono = "0.4.22"
 rand = "0.8.5"
 reqwest = "0.11.11"
 htmlescape = "0.3.1"
