@@ -1,4 +1,3 @@
-#![feature(const_btree_new)]
 use anyhow::Result;
 use redis::AsyncCommands;
 use serde::Deserialize;
