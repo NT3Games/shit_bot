@@ -13,13 +13,12 @@ use teloxide::{
     payloads::{AnswerCallbackQuerySetters, EditMessageTextSetters, SendMessageSetters},
     prelude::*,
     types::{
-        CallbackQuery, Chat, ChatId, ChatMember, InlineKeyboardButton, InlineKeyboardMarkup,
-        ParseMode, User, UserId,
+        Chat, ChatMember, InlineKeyboardButton, InlineKeyboardMarkup, MessageId, ParseMode, User,
     },
 };
 use tokio::{sync::Mutex, time::sleep};
 
-use crate::{Bot, CONFIG};
+use crate::CONFIG;
 
 const LAST_JOIN_RESULT_KEY: &str = "shit_bot_last_join_result";
 
@@ -35,12 +34,12 @@ pub struct Question {
 struct QueryData {
     pub user: User,
     pub chat_id: ChatId,
-    pub new_member_id: i32,
+    pub new_member_id: MessageId,
     pub correct: usize,
     pub title: &'static str,
     pub options: Vec<&'static String>,
     pub tried_times: u8,
-    pub cas: Option<i32>, // i32 is message id
+    pub cas: Option<MessageId>, // i32 is message id
     pub left_minutes: u8,
 }
 
@@ -139,7 +138,7 @@ fn rank_user(user: &User) -> f64 {
     result
 }
 
-pub async fn send_auth(bot: Bot, user: User, chat: Chat, new_member_id: i32) -> Result<()> {
+pub async fn send_auth(bot: Bot, user: User, chat: Chat, new_member_id: MessageId) -> Result<()> {
     if user.is_bot {
         return Ok(());
     }
@@ -206,7 +205,7 @@ pub async fn send_auth(bot: Bot, user: User, chat: Chat, new_member_id: i32) -> 
         }
     };
 
-    users.insert(msg.id, data);
+    users.insert(msg.id.0, data);
 
     let bot2 = bot.clone();
     tokio::spawn(async move {
@@ -215,7 +214,7 @@ pub async fn send_auth(bot: Bot, user: User, chat: Chat, new_member_id: i32) -> 
             sleep(std::time::Duration::from_secs(60)).await;
 
             let mut users = UNVERIFIED_USERS.lock().await;
-            if let btree_map::Entry::Occupied(mut data) = users.entry(msg.id) {
+            if let btree_map::Entry::Occupied(mut data) = users.entry(msg.id.0) {
                 data.get_mut().left_minutes -= 1;
                 let data = data.get();
                 if data.left_minutes == 0 {
@@ -232,7 +231,7 @@ pub async fn send_auth(bot: Bot, user: User, chat: Chat, new_member_id: i32) -> 
         }
 
         let mut users = UNVERIFIED_USERS.lock().await;
-        if let btree_map::Entry::Occupied(data) = users.entry(msg.id) {
+        if let btree_map::Entry::Occupied(data) = users.entry(msg.id.0) {
             ban(bot, data, Some(Utc::now() + Duration::minutes(10)))
                 .await
                 .ok();
@@ -240,7 +239,7 @@ pub async fn send_auth(bot: Bot, user: User, chat: Chat, new_member_id: i32) -> 
     });
 
     let bot2 = bot.clone();
-    tokio::spawn(check_cas(bot2, chat.id, user.id, msg.id));
+    tokio::spawn(check_cas(bot2, chat.id, user.id, msg.id.0));
 
     Ok(())
 }
@@ -280,7 +279,7 @@ async fn check_cas(bot: Bot, chat_id: ChatId, user_id: UserId, msg_id: i32) -> R
                 user.user.id
             ),
         )
-        .reply_to_message_id(msg_id)
+        .reply_to_message_id(MessageId(msg_id))
         .parse_mode(ParseMode::Html)
         .reply_markup(keyboard)
         .disable_web_page_preview(true)
@@ -298,7 +297,7 @@ pub async fn callback(bot: Bot, callback: CallbackQuery) -> Result<()> {
     }
     let origin = callback.message.as_ref().unwrap();
     let mut users = UNVERIFIED_USERS.lock().await;
-    let mut data_entry = if let btree_map::Entry::Occupied(data) = users.entry(origin.id) {
+    let mut data_entry = if let btree_map::Entry::Occupied(data) = users.entry(origin.id.0) {
         data
     } else {
         bot.answer_callback_query(callback.id).await?;
@@ -426,14 +425,14 @@ async fn ban(
 ) -> Result<()> {
     let (msg_id, data) = entry.remove_entry();
 
-    let mut req = bot.inner().ban_chat_member(data.chat_id, data.user.id);
+    let mut req = bot.ban_chat_member(data.chat_id, data.user.id);
     req.until_date = until_date;
-    let res = req.send().await;
+    let res = req.await;
     if let Err(err) = res {
         bot.send_message(data.chat_id, err.to_string()).await?;
         return Err(err.into());
     }
-    bot.delete_message(data.chat_id, msg_id).await?;
+    bot.delete_message(data.chat_id, MessageId(msg_id)).await?;
     bot.delete_message(data.chat_id, data.new_member_id).await?;
     if let Some(cas) = data.cas {
         bot.delete_message(data.chat_id, cas).await?;
@@ -467,7 +466,7 @@ async fn allow(bot: Bot, entry: OccupiedEntry<'_, i32, QueryData>, remain_cas: b
         .await?;
         return Err(err.into());
     }
-    bot.delete_message(data.chat_id, msg_id).await?;
+    bot.delete_message(data.chat_id, MessageId(msg_id)).await?;
 
     if let Some(cas) = data.cas {
         if remain_cas {
@@ -505,9 +504,9 @@ async fn send_join_result(bot: Bot, chat_id: ChatId, message: String) -> Result<
     let last: Option<i32> = con
         .get(format!("{}/{}", LAST_JOIN_RESULT_KEY, chat_id))
         .await?;
-    con.set(LAST_JOIN_RESULT_KEY, res.id).await?;
+    con.set(LAST_JOIN_RESULT_KEY, res.id.0).await?;
     if let Some(id) = last {
-        bot.delete_message(chat_id, id).await?;
+        bot.delete_message(chat_id, MessageId(id)).await?;
     }
 
     Ok(())

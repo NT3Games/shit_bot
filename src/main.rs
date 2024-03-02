@@ -2,17 +2,12 @@ use anyhow::Result;
 use redis::AsyncCommands;
 use serde::Deserialize;
 use teloxide::{
-    dispatching::UpdateFilterExt,
-    prelude::*,
-    types::{ChatId, UserId},
-    utils::command::BotCommands,
+    dispatching::UpdateFilterExt, prelude::*, types::MessageId, utils::command::BotCommands,
     RequestError,
 };
 use tokio::{fs::File, io::AsyncReadExt, sync::OnceCell};
 
 pub mod admin;
-
-type Bot = AutoSend<teloxide::Bot>;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -46,7 +41,7 @@ async fn main() -> Result<()> {
 
     let config = serde_yaml::from_slice::<Config>(&buf)?;
 
-    let bot = teloxide::Bot::new(config.token.clone()).auto_send();
+    let bot = teloxide::Bot::new(config.token.clone());
 
     CONFIG.set(config)?;
 
@@ -108,7 +103,7 @@ async fn main() -> Result<()> {
             Update::filter_channel_post().endpoint(|_bot: Bot, msg: Message| async move {
                 if msg.chat.id == CONFIG.get().unwrap().to_chat {
                     let mut con = get_client().await.get_async_connection().await?;
-                    con.set(LAST_SENT_KEY, msg.id).await?;
+                    con.set(LAST_SENT_KEY, msg.id.0).await?;
                 }
                 Ok(())
             }),
@@ -139,7 +134,7 @@ async fn main() -> Result<()> {
 }
 
 #[derive(BotCommands, Clone)]
-#[command(rename = "lowercase", description = "一个帮助记载屎书的机器人：")]
+#[command(rename_rule = "lowercase", description = "一个帮助记载屎书的机器人：")]
 enum Command {
     #[command(description = "发送帮助文字")]
     Help,
@@ -161,12 +156,10 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
     match command {
         Command::Help => {
             bot.send_message(message.chat.id, Command::descriptions().to_string())
-                .send()
                 .await?;
         }
         Command::Source => {
             bot.send_message(message.chat.id, "https://github.com/NT3Games/shit_bot")
-                .send()
                 .await?;
         }
         Command::Shit => {
@@ -178,11 +171,9 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
             };
             let chat_member = bot
                 .get_chat_member(config.to_chat, message.from().unwrap().id)
-                .send()
                 .await;
             if let Err(RequestError::Api(teloxide::ApiError::UserNotFound)) = chat_member {
                 let request = bot
-                    .inner()
                     .send_message(
                         message.chat.id,
                         "请先加入 https://t.me/nipple_hill 以使用此命令",
@@ -196,12 +187,9 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
 
             if let Some(reply) = message.reply_to_message() {
                 forward_shit(bot.clone(), reply.to_owned()).await?;
-                bot.delete_message(message.chat.id, message.id)
-                    .send()
-                    .await?;
+                bot.delete_message(message.chat.id, message.id).await?;
             } else {
                 let request = bot
-                    .inner()
                     .send_message(message.chat.id, "没有选择消息")
                     .reply_to_message_id(message.id);
                 replace_send(bot, request).await?;
@@ -225,7 +213,6 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
         Command::Bullshit => {
             let privileged = bot
                 .get_chat_member(config.to_chat, message.from().unwrap().id)
-                .send()
                 .await
                 .map(|c| c.is_privileged())
                 .unwrap_or(false);
@@ -300,16 +287,13 @@ async fn edit_shit(bot: Bot, message: Message) -> Result<()> {
     }
     let sent: Option<i32> = {
         let mut con = get_client().await.get_async_connection().await?;
-        con.get(message.id).await?
+        con.get(message.id.0).await?
     };
 
     if let Some(id) = sent {
-        bot.send_message(
-            CONFIG.get().unwrap().to_chat,
-            format!("修改为：\n{}", message.text().unwrap()),
-        )
-        .reply_to_message_id(id)
-        .await?;
+        bot.send_message(CONFIG.get().unwrap().to_chat, message.text().unwrap())
+            .reply_to_message_id(MessageId(id))
+            .await?;
     }
     Ok(())
 }
@@ -317,16 +301,14 @@ async fn edit_shit(bot: Bot, message: Message) -> Result<()> {
 async fn forward_shit(bot: Bot, message: Message) -> Result<()> {
     let sent = bot
         .forward_message(CONFIG.get().unwrap().to_chat, message.chat.id, message.id)
-        .send()
         .await?;
 
     {
         let mut con = get_client().await.get_async_connection().await?;
-        con.set(LAST_SHIT_KEY, sent.id).await?;
+        con.set(LAST_SHIT_KEY, sent.id.0).await?;
     }
 
     let request = bot
-        .inner()
         .send_message(
             message.chat.id,
             format!("https://t.me/nipple_hill/{}", sent.id),
@@ -337,7 +319,7 @@ async fn forward_shit(bot: Bot, message: Message) -> Result<()> {
 
     {
         let mut con = get_client().await.get_async_connection().await?;
-        con.set(message.id, sent.id).await?;
+        con.set(message.id.0, sent.id.0).await?;
     }
 
     Ok(())
@@ -354,13 +336,13 @@ async fn replace_send(
     if message.chat_id != Id(source) {
         panic!()
     }
-    let res = message.send().await?;
+    let res = message.await?;
 
     let mut con = get_client().await.get_async_connection().await?;
     let last: Option<i32> = con.get(LAST_SENT_KEY).await?;
-    con.set(LAST_SENT_KEY, res.id).await?;
+    con.set(LAST_SENT_KEY, res.id.0).await?;
     if let Some(id) = last {
-        bot.delete_message(source, id).send().await?;
+        bot.delete_message(source, MessageId(id)).await?;
     }
     Ok(())
 }
