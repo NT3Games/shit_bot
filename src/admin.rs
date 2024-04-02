@@ -464,6 +464,7 @@ async fn callback_handle(
         data.options = options;
         data.title = title;
         bot.edit_message_text(origin.chat.id, origin.id, data.message())
+            .parse_mode(ParseMode::Html)
             .reply_markup(data.keyboard(false))
             .await?;
         data_entry.get_mut().correct = correct_idx;
