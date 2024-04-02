@@ -14,6 +14,7 @@ pub struct Config {
     pub token: String,
     pub to_chat: ChatId,
     pub listen_chat: ChatId,
+    pub admin_chat: ChatId,
     pub watch_list: Vec<UserId>,
     pub questions: Vec<admin::Question>,
 }
@@ -52,13 +53,22 @@ async fn main() -> Result<()> {
                     |bot: Bot, msg: Message| async move {
                         if let Some(users) = msg.new_chat_members() {
                             for user in users {
-                                admin::send_auth(
+                                let res = admin::send_auth(
                                     bot.clone(),
                                     user.to_owned(),
                                     msg.chat.clone(),
                                     msg.id,
                                 )
-                                .await?;
+                                .await;
+
+                                if let Err(err) = res {
+                                    bot.send_message(
+                                        CONFIG.get().unwrap().admin_chat,
+                                        format!("{}", err),
+                                    )
+                                    .await?;
+                                    return Err(err.into());
+                                }
                             }
                         }
 
@@ -67,6 +77,68 @@ async fn main() -> Result<()> {
                 ))
                 .branch(
                     dptree::filter(|msg: Message| msg.is_automatic_forward()).endpoint(auto_unpin),
+                )
+                .branch(
+                    dptree::filter_async(|msg: Message| async move {
+                        if msg.text().is_none() || msg.from().is_none() {
+                            log::debug!("Potential spam message: no content");
+                            return false;
+                        }
+                        if let Some(entities) = msg.entities() {
+                            if !entities
+                                .iter()
+                                .any(|e| e.kind == teloxide::types::MessageEntityKind::Url)
+                            {
+                                log::debug!("Potential spam message: no link");
+                                return false;
+                            }
+                        } else {
+                            log::debug!("Potential spam message: no link");
+                            return false;
+                        }
+                        let con = crate::get_client().await.get_async_connection().await;
+                        let mut con = if let Ok(con) = con { con } else { return false };
+
+                        let res = con
+                            .sismember(admin::AUTHED_USERS_KEY, msg.from().unwrap().id.0)
+                            .await;
+                        match res {
+                            Ok(res) => {
+                                if res {
+                                    false
+                                } else {
+                                    true
+                                }
+                            }
+                            Err(err) => {
+                                log::error!("Redis error: {}", err);
+                                false
+                            }
+                        }
+                    })
+                    .endpoint(|bot: Bot, msg: Message| async move {
+                        log::debug!("Potential spam message");
+                        if let Some(user) = msg.from() {
+                            let res = admin::send_auth_for_channel(
+                                bot.clone(),
+                                user.to_owned(),
+                                msg.chat.clone(),
+                                msg.id,
+                            )
+                            .await;
+
+                            if let Err(err) = res {
+                                bot.send_message(
+                                    CONFIG.get().unwrap().admin_chat,
+                                    format!("{}", err),
+                                )
+                                .await?;
+                                return Err(err.into());
+                            }
+                        }
+
+                        Ok(())
+                    }),
                 )
                 .branch(
                     dptree::entry()

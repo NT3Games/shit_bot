@@ -1,6 +1,7 @@
 token: "1234567890:AAAAAAA..." # telegram bot token
 to_chat: -100                  # the chat forward to
 listen_chat: -100              # the working chat
+admin_chat: -100               # the chat that admin receive nofication
 watch_list: [0]                # the people allowed to automatic forward
 questions:
   - title: 二加二等于几

@@ -1,6 +1,9 @@
-use std::collections::{
-    btree_map::{self, OccupiedEntry},
-    BTreeMap,
+use std::{
+    collections::{
+        btree_map::{self, OccupiedEntry},
+        BTreeMap,
+    },
+    future::Future,
 };
 
 use anyhow::Result;
@@ -21,6 +24,7 @@ use tokio::{sync::Mutex, time::sleep};
 use crate::CONFIG;
 
 const LAST_JOIN_RESULT_KEY: &str = "shit_bot_last_join_result";
+pub const AUTHED_USERS_KEY: &str = "shit_bot_authed_users";
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Question {
@@ -34,13 +38,14 @@ pub struct Question {
 struct QueryData {
     pub user: User,
     pub chat_id: ChatId,
-    pub new_member_id: MessageId,
+    pub message_id: MessageId, // may the new member message or spam message
     pub correct: usize,
     pub title: &'static str,
     pub options: Vec<&'static String>,
     pub tried_times: u8,
     pub cas: Option<MessageId>, // i32 is message id
     pub left_minutes: u8,
+    pub joining: bool,
 }
 
 impl QueryData {
@@ -131,7 +136,7 @@ fn rank_user(user: &User) -> f64 {
     if is_spam_name(&user.full_name()) {
         return 0.0;
     }
-    let mut result = 0.4;
+    let mut result = 0.5;
     if user.username.is_some() {
         result += 0.3;
     }
@@ -168,13 +173,14 @@ pub async fn send_auth(bot: Bot, user: User, chat: Chat, new_member_id: MessageI
     let data = QueryData {
         user: user.clone(),
         chat_id: chat.id,
-        new_member_id,
+        message_id: new_member_id,
         title,
         options,
         correct: correct_idx,
         tried_times: 0,
         cas: None,
         left_minutes: 5,
+        joining: true,
     };
 
     let mut users = UNVERIFIED_USERS.lock().await;
@@ -206,6 +212,16 @@ pub async fn send_auth(bot: Bot, user: User, chat: Chat, new_member_id: MessageI
     };
 
     users.insert(msg.id.0, data);
+
+    let bot2 = bot.clone();
+    tokio::spawn(waiting_answer(bot.clone(), msg.id, async move {
+        let mut users = UNVERIFIED_USERS.lock().await;
+        if let btree_map::Entry::Occupied(data) = users.entry(msg.id.0) {
+            ban(bot2, data, Some(Utc::now() + Duration::minutes(10)))
+                .await
+                .ok();
+        }
+    }));
 
     let bot2 = bot.clone();
     tokio::spawn(async move {
@@ -290,85 +306,157 @@ async fn check_cas(bot: Bot, chat_id: ChatId, user_id: UserId, msg_id: i32) -> R
     Ok(())
 }
 
+pub struct CallbackResult {
+    pub typ: CallbackResultType,
+    pub msg: Option<String>,
+}
+
+pub enum CallbackResultType {
+    AdminAllow,
+    AdminBan,
+    Allow,
+    Ban(Option<DateTime<Utc>>),
+    Other,
+}
+
 pub async fn callback(bot: Bot, callback: CallbackQuery) -> Result<()> {
     if callback.message.is_none() || callback.data.is_none() {
         bot.answer_callback_query(callback.id).await?;
         return Ok(());
     }
-    let origin = callback.message.as_ref().unwrap();
     let mut users = UNVERIFIED_USERS.lock().await;
-    let mut data_entry = if let btree_map::Entry::Occupied(data) = users.entry(origin.id.0) {
+    let mut data_entry = if let btree_map::Entry::Occupied(data) =
+        users.entry(callback.message.as_ref().unwrap().id.0)
+    {
         data
     } else {
         bot.answer_callback_query(callback.id).await?;
         return Ok(());
     };
+
+    let callback_id = callback.id.clone();
+
+    let result = callback_handle(bot.clone(), &callback, &mut data_entry).await?;
+
     let data = data_entry.get();
 
-    let callback_data = callback.data.unwrap();
+    if let Some(msg) = result.msg {
+        bot.answer_callback_query(callback_id)
+            .text(msg)
+            .show_alert(true)
+            .await?;
+    } else {
+        bot.answer_callback_query(callback.id).await?;
+    }
+
+    use CallbackResultType::*;
+
+    if data.joining {
+        match result.typ {
+            AdminAllow => {
+                allow(bot, data_entry, false).await?;
+            }
+            AdminBan => {
+                ban(bot, data_entry, None).await?;
+            }
+            Allow => {
+                allow(bot, data_entry, true).await?;
+            }
+            Ban(until_date) => {
+                ban(bot, data_entry, until_date).await?;
+            }
+            Other => {}
+        };
+    } else {
+        match result.typ {
+            AdminAllow | Allow => {
+                allow_send_message(bot, data_entry).await?;
+            }
+            AdminBan | Ban(_) => {
+                delete_sent_message(bot, data_entry).await?;
+            }
+            Other => {}
+        };
+    }
+    return Ok(());
+}
+
+async fn callback_handle(
+    bot: Bot,
+    callback: &CallbackQuery,
+    data_entry: &mut OccupiedEntry<'_, i32, QueryData>,
+) -> Result<CallbackResult> {
+    use CallbackResultType::*;
+
+    macro_rules! res {
+        ($typ:expr, $msg:literal) => {
+            res! { $typ, $msg.to_string() }
+        };
+        ($typ:expr, ($($msg:expr),+)) => {
+            res!( $typ, format!($($msg),+) )
+        };
+        ($typ:expr, $msg:expr) => {
+            Ok(CallbackResult {
+                typ: $typ,
+                msg: Some($msg),
+            })
+        };
+        ($typ:path) => {
+            Ok(CallbackResult {
+                typ: $typ,
+                msg: None,
+            })
+        };
+    }
+
+    let origin = callback.message.as_ref().unwrap();
+    let callback_data = callback.data.as_ref().unwrap();
+
+    let data = data_entry.get();
 
     if callback_data.starts_with("admin") {
         let res = bot.get_chat_member(origin.chat.id, callback.from.id).await;
         let member: ChatMember = match res {
             Ok(member) => member,
             Err(err) => {
-                bot.answer_callback_query(callback.id)
-                    .text(format!("{}", err))
-                    .show_alert(true)
-                    .await?;
-                return Ok(());
+                return res!(Other, ("{}", err));
             }
         };
         if member.is_privileged() {
             match &callback_data[6..] {
                 "ban" => {
-                    bot.answer_callback_query(callback.id).await?;
-                    ban(bot, data_entry, None).await?;
+                    return res!(AdminBan);
                 }
                 "allow" => {
-                    bot.answer_callback_query(callback.id).await?;
-                    allow(bot, data_entry, false).await?;
+                    return res!(AdminAllow);
                 }
                 _ => {
-                    bot.answer_callback_query(callback.id)
-                        .text(format!("未知命令：{}", &callback_data[6..]))
-                        .show_alert(true)
-                        .await?;
+                    return res!(Other, ("未知命令：{}", &callback_data[6..]));
                 }
             }
         } else {
-            bot.answer_callback_query(callback.id)
-                .text("只有管理员可以点击此按钮")
-                .show_alert(true)
-                .await?;
+            return res!(Other, "只有管理员可以点击此按钮");
         }
-
-        return Ok(());
     }
 
     if callback.from.id != data.user.id {
-        if callback_data == data.correct.to_string() {
-            bot.answer_callback_query(callback.id)
-                .text("回答正确！但是并不会奖励屎给你。")
-                .show_alert(true)
-                .await?;
-        } else if callback_data == "change" {
-            bot.answer_callback_query(callback.id)
-                .text("不会就别点！")
-                .show_alert(true)
-                .await?;
-        } else {
-            bot.answer_callback_query(callback.id)
-                .text("回答错误！")
-                .show_alert(true)
-                .await?;
-        }
-        return Ok(());
+        return res!(
+            Other,
+            {
+                if callback_data == &data.correct.to_string() {
+                    "回答正确！但是并不会奖励屎给你。"
+                } else if callback_data == "change" {
+                    "不会就别点！"
+                } else {
+                    "回答错误！"
+                }
+            }
+            .to_string()
+        );
     }
 
-    if callback_data == data.correct.to_string() {
-        bot.answer_callback_query(callback.id).await?;
-        allow(bot, data_entry, true).await?;
+    if callback_data == &data.correct.to_string() {
+        return res!(Allow);
     } else if callback_data == "change" {
         let (title, options, correct_idx) = new_question();
         let data = data_entry.get_mut();
@@ -379,43 +467,22 @@ pub async fn callback(bot: Bot, callback: CallbackQuery) -> Result<()> {
             .reply_markup(data.keyboard(false))
             .await?;
         data_entry.get_mut().correct = correct_idx;
+        return res!(Other);
     } else {
         if data.cas.is_some() {
-            bot.answer_callback_query(callback.id)
-                .text("验证失败")
-                .show_alert(true)
-                .await?;
-
-            ban(bot.clone(), data_entry, None).await?;
+            return res!(Ban(None), "验证失败");
         } else if data.tried_times >= 2 {
-            bot.answer_callback_query(callback.id)
-                .text("验证失败，失败次数过多，请十分钟后重新加入")
-                .show_alert(true)
-                .await?;
-
-            ban(
-                bot.clone(),
-                data_entry,
-                Some(Utc::now() + Duration::minutes(10)),
-            )
-            .await?;
+            return res!(
+                Ban(Some(Utc::now() + Duration::minutes(10))),
+                "验证失败，失败次数过多，请十分钟后重新加入"
+            );
         } else if data.tried_times == 0 && thread_rng().gen_bool(rank_user(&data.user)) {
-            bot.answer_callback_query(callback.id)
-                .text("尽管你回答错误了，但我们还是允许你加入。")
-                .show_alert(true)
-                .await?;
-            allow(bot, data_entry, true).await?;
+            return res!(Allow, "尽管你回答错误了，但我们还是允许你加入。");
         } else {
-            bot.answer_callback_query(callback.id)
-                .text("验证失败")
-                .show_alert(true)
-                .await?;
             data_entry.get_mut().tried_times += 1;
+            return res!(Other, "验证失败");
         }
-        return Ok(());
     }
-
-    Ok(())
 }
 
 async fn ban(
@@ -433,7 +500,7 @@ async fn ban(
         return Err(err.into());
     }
     bot.delete_message(data.chat_id, MessageId(msg_id)).await?;
-    bot.delete_message(data.chat_id, data.new_member_id).await?;
+    bot.delete_message(data.chat_id, data.message_id).await?;
     if let Some(cas) = data.cas {
         bot.delete_message(data.chat_id, cas).await?;
     }
@@ -483,6 +550,9 @@ async fn allow(bot: Bot, entry: OccupiedEntry<'_, i32, QueryData>, remain_cas: b
         }
     }
 
+    let mut con = crate::get_client().await.get_async_connection().await?;
+    con.sadd(AUTHED_USERS_KEY, data.user.id.0).await?;
+
     send_join_result(
         bot,
         data.chat_id,
@@ -494,6 +564,10 @@ async fn allow(bot: Bot, entry: OccupiedEntry<'_, i32, QueryData>, remain_cas: b
 }
 
 async fn send_join_result(bot: Bot, chat_id: ChatId, message: String) -> Result<()> {
+    bot.send_message(crate::CONFIG.get().unwrap().admin_chat, message.clone())
+        .parse_mode(ParseMode::Html)
+        .disable_web_page_preview(true)
+        .await?;
     let res = bot
         .send_message(chat_id, message)
         .parse_mode(ParseMode::Html)
@@ -510,4 +584,110 @@ async fn send_join_result(bot: Bot, chat_id: ChatId, message: String) -> Result<
     }
 
     Ok(())
+}
+
+async fn allow_send_message(bot: Bot, entry: OccupiedEntry<'_, i32, QueryData>) -> Result<()> {
+    let (msg_id, data) = entry.remove_entry();
+
+    let mut con = crate::get_client().await.get_async_connection().await?;
+    con.sadd(AUTHED_USERS_KEY, data.user.id.0).await?;
+
+    bot.delete_message(data.chat_id, MessageId(msg_id)).await?;
+
+    Ok(())
+}
+
+async fn delete_sent_message(bot: Bot, entry: OccupiedEntry<'_, i32, QueryData>) -> Result<()> {
+    let (msg_id, data) = entry.remove_entry();
+    bot.delete_message(data.chat_id, MessageId(msg_id)).await?;
+    bot.delete_message(data.chat_id, data.message_id).await?;
+
+    Ok(())
+}
+
+pub async fn send_auth_for_channel(
+    bot: Bot,
+    user: User,
+    chat: Chat,
+    message_id: MessageId,
+) -> Result<()> {
+    if user.is_bot || user.is_premium || {
+        let mut con = crate::get_client().await.get_async_connection().await?;
+        con.sismember(AUTHED_USERS_KEY, user.id.0).await?
+    } {
+        return Ok(());
+    }
+
+    let (title, options, correct_idx) = new_question();
+
+    let data = QueryData {
+        user: user.clone(),
+        chat_id: chat.id,
+        message_id,
+        title,
+        options,
+        correct: correct_idx,
+        tried_times: 0,
+        cas: None,
+        left_minutes: 5,
+        joining: false,
+    };
+
+    let mut users = UNVERIFIED_USERS.lock().await;
+
+    let res = bot
+        .send_message(chat.id, data.message())
+        .parse_mode(ParseMode::Html)
+        .reply_markup(data.keyboard(true))
+        .await;
+
+    let msg: Message = match res {
+        Ok(msg) => msg,
+        Err(err) => {
+            bot.send_message(
+                CONFIG.get().unwrap().admin_chat,
+                format!("问题发送失败，自动允许发送\n{}", err),
+            )
+            .await?;
+            return Err(err.into());
+        }
+    };
+
+    users.insert(msg.id.0, data);
+
+    tokio::spawn(waiting_answer(bot.clone(), msg.id, async move {
+        let mut users = UNVERIFIED_USERS.lock().await;
+        if let btree_map::Entry::Occupied(data) = users.entry(msg.id.0) {
+            delete_sent_message(bot, data).await.ok();
+        }
+    }));
+
+    Ok(())
+}
+
+async fn waiting_answer<F>(bot: Bot, msg_id: MessageId, timeout: F)
+where
+    F: Future<Output = ()>,
+{
+    loop {
+        sleep(std::time::Duration::from_secs(60)).await;
+
+        let mut users = UNVERIFIED_USERS.lock().await;
+        if let btree_map::Entry::Occupied(mut data) = users.entry(msg_id.0) {
+            data.get_mut().left_minutes -= 1;
+            let data = data.get();
+            if data.left_minutes == 0 {
+                break;
+            } else {
+                bot.edit_message_text(data.chat_id, msg_id, data.message())
+                    .reply_markup(data.keyboard(false))
+                    .await
+                    .ok();
+            }
+        } else {
+            break;
+        }
+    }
+
+    timeout.await;
 }
