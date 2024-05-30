@@ -81,19 +81,16 @@ async fn main() -> Result<()> {
                 .branch(
                     dptree::filter_async(|msg: Message| async move {
                         if msg.text().is_none() || msg.from().is_none() {
-                            log::debug!("Potential spam message: no content");
                             return false;
                         }
                         if let Some(entities) = msg.entities() {
-                            if !entities
-                                .iter()
-                                .any(|e| e.kind == teloxide::types::MessageEntityKind::Url)
-                            {
-                                log::debug!("Potential spam message: no link");
+                            if !entities.iter().any(|e| {
+                                e.kind == teloxide::types::MessageEntityKind::Url
+                                    || e.kind == teloxide::types::MessageEntityKind::Mention
+                            }) {
                                 return false;
                             }
                         } else {
-                            log::debug!("Potential spam message: no link");
                             return false;
                         }
                         let con = crate::get_client().await.get_async_connection().await;
