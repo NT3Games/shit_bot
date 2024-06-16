@@ -3,6 +3,15 @@ to_chat: -100                  # the chat forward to
 listen_chat: -100              # the working chat
 admin_chat: -100               # the chat that admin receive nofication
 watch_list: [0]                # the people allowed to automatic forward
+forward_pattern: "(?:等我长大以后|^(?=.{5,}(?<!~)$)(?!.*(屎公仔|屎娃娃|小屎屎|屎官)).*(屎|💩))"
+# text.contains("等我长大以后")
+#     || (text.chars().nth(5).is_some() // len > 5
+# && (text.contains('屎') || text.contains('💩'))
+# && !(text.contains("屎公仔")
+#     || text.contains("屎娃娃")
+#     || text.contains("小屎屎")
+#     || text.contains("屎官"))
+# && !text.ends_with('~'))
 questions:
   - title: 二加二等于几
     contrary: 二加二不等于几 # optional

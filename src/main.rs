@@ -1,5 +1,6 @@
 use anyhow::Result;
 use redis::AsyncCommands;
+use regex::Regex;
 use serde::Deserialize;
 use teloxide::{
     dispatching::UpdateFilterExt, prelude::*, types::MessageId, utils::command::BotCommands,
@@ -17,6 +18,8 @@ pub struct Config {
     pub admin_chat: ChatId,
     pub watch_list: Vec<UserId>,
     pub questions: Vec<admin::Question>,
+    #[serde(with = "serde_regex")]
+    pub forward_pattern: Regex,
 }
 
 static CLIENT: OnceCell<redis::Client> = OnceCell::const_new();
@@ -153,14 +156,8 @@ async fn main() -> Result<()> {
                             return false;
                         }
                         if let Some(text) = msg.text() {
-                            let text = text.trim();
-                            text.contains("等我长大以后")
-                                || (text.chars().nth(5).is_some() // len > 5
-                            && (text.contains('屎') || text.contains('💩'))
-                            && !(text.contains("屎公仔")
-                                || text.contains("屎娃娃")
-                                || text.contains("小屎屎"))
-                            && !text.ends_with('~'))
+                            let text = text.trim().replace(['\r', '\n'], "");
+                            config.forward_pattern.is_match(&text)
                         } else {
                             false
                         }
