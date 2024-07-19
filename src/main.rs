@@ -1,3 +1,4 @@
+use admin::handler::Handler;
 use anyhow::Result;
 use redis::AsyncCommands;
 use regex::Regex;
@@ -9,6 +10,8 @@ use teloxide::{
 use tokio::{fs::File, io::AsyncReadExt, sync::OnceCell};
 
 pub mod admin;
+pub mod question;
+pub mod utils;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -17,7 +20,7 @@ pub struct Config {
     pub listen_chat: ChatId,
     pub admin_chat: ChatId,
     pub watch_list: Vec<UserId>,
-    pub questions: Vec<admin::Question>,
+    pub questions: Vec<question::Question>,
     #[serde(with = "serde_regex")]
     pub forward_pattern: Regex,
 }
@@ -56,13 +59,14 @@ async fn main() -> Result<()> {
                     |bot: Bot, msg: Message| async move {
                         if let Some(users) = msg.new_chat_members() {
                             for user in users {
-                                let res = admin::send_auth(
-                                    bot.clone(),
-                                    user.to_owned(),
-                                    msg.chat.clone(),
-                                    msg.id,
-                                )
-                                .await;
+                                let res = admin::join_handler::JoinHandler
+                                    .send_question(
+                                        bot.clone(),
+                                        user.to_owned(),
+                                        msg.chat.clone(),
+                                        msg.id,
+                                    )
+                                    .await;
 
                                 if let Err(err) = res {
                                     bot.send_message(
@@ -70,7 +74,7 @@ async fn main() -> Result<()> {
                                         format!("{}", err),
                                     )
                                     .await?;
-                                    return Err(err.into());
+                                    return Err(err);
                                 }
                             }
                         }
@@ -103,7 +107,9 @@ async fn main() -> Result<()> {
                             .sismember(admin::AUTHED_USERS_KEY, msg.from().unwrap().id.0)
                             .await;
                         match res {
-                            Ok(res) => {
+                            Ok(res) =>
+                            {
+                                #[allow(clippy::needless_bool)]
                                 if res {
                                     false
                                 } else {
@@ -119,13 +125,14 @@ async fn main() -> Result<()> {
                     .endpoint(|bot: Bot, msg: Message| async move {
                         log::debug!("Potential spam message");
                         if let Some(user) = msg.from() {
-                            let res = admin::send_auth_for_channel(
-                                bot.clone(),
-                                user.to_owned(),
-                                msg.chat.clone(),
-                                msg.id,
-                            )
-                            .await;
+                            let res = admin::link_handler::LinkHandler
+                                .send_question(
+                                    bot.clone(),
+                                    user.to_owned(),
+                                    msg.chat.clone(),
+                                    msg.id,
+                                )
+                                .await;
 
                             if let Err(err) = res {
                                 bot.send_message(
@@ -133,7 +140,7 @@ async fn main() -> Result<()> {
                                     format!("{}", err),
                                 )
                                 .await?;
-                                return Err(err.into());
+                                return Err(err);
                             }
                         }
 
@@ -180,7 +187,19 @@ async fn main() -> Result<()> {
                     .endpoint(edit_shit),
             ),
         )
-        .branch(Update::filter_callback_query().endpoint(admin::callback));
+        .branch(Update::filter_callback_query().endpoint(
+            |bot: Bot, callback: CallbackQuery| async move {
+                let result = admin::callback(bot.clone(), callback.clone()).await;
+                if let Err(e) = result {
+                    bot.send_message(
+                        callback.message.unwrap().chat.id,
+                        format!("Error: {}", e),
+                    )
+                    .await?;
+                }
+                Ok(())
+            },
+        ));
     // teloxide::commands_repl(bot, answer, Command::ty()).await;
 
     Dispatcher::builder(bot, handler)
