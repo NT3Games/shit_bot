@@ -3,7 +3,6 @@ use teloxide::{
     payloads::SendMessageSetters,
     requests::Requester,
     types::{Chat, InlineKeyboardButton, InlineKeyboardMarkup, Message, MessageId, ParseMode, User},
-    Bot,
 };
 
 use super::{
@@ -11,7 +10,7 @@ use super::{
     handler::{res, Handler},
     user_finish, QuestionData,
 };
-use crate::{question, utils::*};
+use crate::{question, utils::*, Bot};
 
 #[derive(Debug, Clone, Copy)]
 pub struct LinkHandler;

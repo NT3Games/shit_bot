@@ -10,10 +10,13 @@ use serde::{
 };
 use teloxide::{dispatching::UpdateFilterExt, prelude::*, types::MessageId, utils::command::BotCommands, RequestError};
 use tokio::{fs::File, io::AsyncReadExt, sync::OnceCell};
+use utils::EasySendMessage;
 
 pub mod admin;
 pub mod question;
 pub mod utils;
+
+pub type Bot = teloxide::Bot;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -103,7 +106,7 @@ async fn main() -> Result<()> {
                 .branch(dptree::filter(|msg: Message| msg.is_automatic_forward()).endpoint(auto_unpin))
                 .branch(
                     dptree::filter_async(|msg: Message| async move {
-                        if msg.text().is_none() || msg.from().is_none() {
+                        if msg.text().is_none() || msg.from.is_none() {
                             return false;
                         }
                         if let Some(entities) = msg.entities() {
@@ -119,7 +122,7 @@ async fn main() -> Result<()> {
                         let con = crate::get_client().await.get_async_connection().await;
                         let mut con = if let Ok(con) = con { con } else { return false };
 
-                        let res = con.sismember(admin::AUTHED_USERS_KEY, msg.from().unwrap().id.0).await;
+                        let res = con.sismember(admin::AUTHED_USERS_KEY, msg.from.unwrap().id.0).await;
                         match res {
                             Ok(res) =>
                             {
@@ -138,7 +141,7 @@ async fn main() -> Result<()> {
                     })
                     .endpoint(|bot: Bot, msg: Message| async move {
                         log::debug!("Potential spam message");
-                        if let Some(user) = msg.from() {
+                        if let Some(user) = msg.from {
                             let res = admin::link_handler::LinkHandler
                                 .send_question(bot.clone(), user.to_owned(), msg.chat.clone(), msg.id)
                                 .await;
@@ -157,10 +160,10 @@ async fn main() -> Result<()> {
                 .branch(
                     dptree::filter(|msg: Message| {
                         let config = CONFIG.get().unwrap();
-                        if msg.from().is_none() {
+                        if msg.from.is_none() {
                             return false;
                         }
-                        let id = msg.from().unwrap().id;
+                        let id = msg.from.as_ref().unwrap().id;
                         if msg.chat.id != config.listen_chat || !config.watch_list.contains(&id) {
                             return false;
                         }
@@ -190,7 +193,7 @@ async fn main() -> Result<()> {
             Update::filter_callback_query().endpoint(|bot: Bot, callback: CallbackQuery| async move {
                 let result = admin::callback(bot.clone(), callback.clone()).await;
                 if let Err(e) = result {
-                    bot.send_message(callback.message.unwrap().chat.id, format!("Error: {}", e))
+                    bot.send_message(callback.message.unwrap().chat().id, format!("Error: {}", e))
                         .await?;
                 }
                 Ok(())
@@ -230,7 +233,7 @@ enum Command {
 }
 
 async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<()> {
-    if message.from().is_none() {
+    if message.from.is_none() {
         return Ok(());
     }
     let config = CONFIG.get().unwrap();
@@ -250,7 +253,9 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
                     .await?;
                 return Ok(());
             };
-            let chat_member = bot.get_chat_member(config.to_chat, message.from().unwrap().id).await;
+            let chat_member = bot
+                .get_chat_member(config.to_chat, message.from.as_ref().unwrap().id)
+                .await;
             if let Err(RequestError::Api(teloxide::ApiError::UserNotFound)) = chat_member {
                 let request = bot
                     .send_message(message.chat.id, "请先加入 https://t.me/nipple_hill 以使用此命令")
@@ -288,7 +293,7 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
         }
         Command::Bullshit => {
             let privileged = bot
-                .get_chat_member(config.to_chat, message.from().unwrap().id)
+                .get_chat_member(config.to_chat, message.from.as_ref().unwrap().id)
                 .await
                 .map(|c| c.is_privileged())
                 .unwrap_or(false);
@@ -299,7 +304,7 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
                 return Ok(());
             }
             if let Some(reply) = message.reply_to_message() {
-                let (res, name) = if let Some(sender) = reply.sender_chat() {
+                let (res, name) = if let Some(sender) = reply.sender_chat.as_ref() {
                     (
                         bot.ban_chat_sender_chat(message.chat.id, sender.id).await,
                         if let Some(title) = sender.title() {
@@ -311,7 +316,7 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
                         },
                     )
                 } else {
-                    let sender = reply.from().unwrap();
+                    let sender = reply.from.as_ref().unwrap();
                     (
                         bot.restrict_chat_member(message.chat.id, sender.id, teloxide::types::ChatPermissions::empty())
                             .await,
@@ -328,7 +333,7 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
                             message.chat.id,
                             format!(
                                 "<a href=\"tg://user?id={}\">{}</a> 的嘴已被屎球堵上",
-                                reply.from().unwrap().id,
+                                reply.from.as_ref().unwrap().id,
                                 name
                             ),
                         )
@@ -383,7 +388,7 @@ async fn forward_shit(bot: Bot, message: Message) -> Result<()> {
     let request = bot
         .send_message(message.chat.id, format!("https://t.me/nipple_hill/{}", sent.id))
         .reply_to_message_id(message.id)
-        .disable_web_page_preview(true);
+        .disable_web_page_preview();
     replace_send(bot, request).await?;
 
     {

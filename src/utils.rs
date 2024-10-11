@@ -4,8 +4,9 @@ use teloxide::{
     payloads::SendMessageSetters,
     requests::Requester,
     types::{ChatId, MessageId, ParseMode, User},
-    Bot,
 };
+
+use crate::Bot;
 
 const LAST_JOIN_RESULT_KEY: &str = "shit_bot_last_join_result";
 
@@ -42,12 +43,12 @@ pub fn rank_user(user: &User) -> f64 {
 pub async fn send_and_delete_join_result(bot: Bot, chat_id: ChatId, message: String) -> Result<()> {
     bot.send_message(crate::CONFIG.get().unwrap().admin_chat, message.clone())
         .parse_mode(ParseMode::Html)
-        .disable_web_page_preview(true)
+        .disable_web_page_preview()
         .await?;
     let res = bot
         .send_message(chat_id, message)
         .parse_mode(ParseMode::Html)
-        .disable_web_page_preview(true)
+        .disable_web_page_preview()
         .await?;
 
     let mut con = crate::get_client().await.get_async_connection().await?;
@@ -65,4 +66,28 @@ pub async fn admin_log(bot: Bot, message: String) -> Result<()> {
         .await?;
 
     Ok(())
+}
+
+pub trait EasySendMessage {
+    fn reply_to_message_id(self, message_id: MessageId) -> Self;
+
+    fn disable_web_page_preview(self) -> Self;
+}
+
+impl EasySendMessage for <Bot as Requester>::SendMessage {
+    fn reply_to_message_id(self, message_id: MessageId) -> Self {
+        use teloxide::types::ReplyParameters;
+        self.reply_parameters(ReplyParameters::new(message_id))
+    }
+
+    fn disable_web_page_preview(self) -> Self {
+        use teloxide::types::LinkPreviewOptions;
+        self.link_preview_options(LinkPreviewOptions {
+            is_disabled: true,
+            url: None,
+            prefer_small_media: false,
+            prefer_large_media: false,
+            show_above_text: false,
+        })
+    }
 }

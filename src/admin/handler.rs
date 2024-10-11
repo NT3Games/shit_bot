@@ -1,8 +1,7 @@
 use anyhow::Result;
-use teloxide::{
-    types::{Chat, InlineKeyboardMarkup, MessageId, User},
-    Bot,
-};
+use teloxide::types::{Chat, InlineKeyboardMarkup, MessageId, User};
+
+use crate::Bot;
 
 pub trait Handler {
     fn send_question(

@@ -15,7 +15,7 @@ use tokio::{
     time::sleep,
 };
 
-use crate::{question, utils::*};
+use crate::{question, utils::*, Bot};
 
 pub mod auth_database;
 pub mod handler;
@@ -151,7 +151,7 @@ pub async fn callback(bot: Bot, callback: CallbackQuery) -> Result<()> {
         bot.answer_callback_query(callback.id).await?;
         return Ok(());
     }
-    let msg_id = callback.message.as_ref().unwrap().id;
+    let msg_id = callback.message.as_ref().unwrap().id();
     let callback_id = callback.id.clone();
 
     let (result, mut handler, user_id) = {
@@ -236,7 +236,7 @@ async fn callback_handle(bot: Bot, callback: &CallbackQuery, data: &mut Question
 
     if callback_data.starts_with("admin") {
         let res: std::result::Result<ChatMember, teloxide::RequestError> =
-            bot.get_chat_member(origin.chat.id, callback.from.id).await;
+            bot.get_chat_member(origin.chat().id, callback.from.id).await;
         let member: ChatMember = match res {
             Ok(member) => member,
             Err(err) => {
@@ -273,7 +273,7 @@ async fn callback_handle(bot: Bot, callback: &CallbackQuery, data: &mut Question
         data.correct = correct_idx;
         data.options = options;
         data.title = title;
-        bot.edit_message_text(origin.chat.id, origin.id, data.message())
+        bot.edit_message_text(origin.chat().id, origin.id(), data.message())
             .parse_mode(ParseMode::Html)
             .reply_markup(data.keyboard(false))
             .await?;

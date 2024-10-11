@@ -6,11 +6,10 @@ use teloxide::{
     payloads::{EditMessageTextSetters, SendMessageSetters},
     requests::Requester,
     types::{Chat, ChatId, InlineKeyboardButton, InlineKeyboardMarkup, Message, MessageId, ParseMode, User, UserId},
-    Bot,
 };
 
 use super::{auth_database, get_data_by_msg, handler::*, user_finish, QuestionData};
-use crate::{question, utils::*};
+use crate::{question, utils::*, Bot};
 
 async fn check_cas(bot: Bot, chat_id: ChatId, user_id: UserId, msg_id: i32) -> Result<()> {
     let ok = reqwest::get(Url::parse_with_params(
@@ -44,7 +43,7 @@ async fn check_cas(bot: Bot, chat_id: ChatId, user_id: UserId, msg_id: i32) -> R
         .reply_to_message_id(MessageId(msg_id))
         .parse_mode(ParseMode::Html)
         .reply_markup(keyboard)
-        .disable_web_page_preview(true)
+        .disable_web_page_preview()
         .await?;
 
     user.cas = Some(res.id);
