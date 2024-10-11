@@ -184,11 +184,7 @@ pub async fn callback(bot: Bot, callback: CallbackQuery) -> Result<()> {
             handler.handle_correct(bot, msg_id).await
         }
         HandleWrong => handler.handle_wrong(bot, msg_id).await,
-        HandleOther => {
-            handler
-                .handle_other(bot, callback.data.as_ref().unwrap(), msg_id)
-                .await
-        }
+        HandleOther => handler.handle_other(bot, callback.data.as_ref().unwrap(), msg_id).await,
     };
     let res = match res {
         Ok(res) => res,
@@ -211,11 +207,7 @@ pub async fn callback(bot: Bot, callback: CallbackQuery) -> Result<()> {
     Ok(())
 }
 
-async fn callback_handle(
-    bot: Bot,
-    callback: &CallbackQuery,
-    data: &mut QuestionData,
-) -> Result<CallbackResult> {
+async fn callback_handle(bot: Bot, callback: &CallbackQuery, data: &mut QuestionData) -> Result<CallbackResult> {
     use CallbackResultType::*;
 
     macro_rules! res {

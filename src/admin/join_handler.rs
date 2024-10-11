@@ -5,18 +5,12 @@ use reqwest::Url;
 use teloxide::{
     payloads::{EditMessageTextSetters, SendMessageSetters},
     requests::Requester,
-    types::{
-        Chat, ChatId, InlineKeyboardButton, InlineKeyboardMarkup, Message, MessageId, ParseMode,
-        User, UserId,
-    },
+    types::{Chat, ChatId, InlineKeyboardButton, InlineKeyboardMarkup, Message, MessageId, ParseMode, User, UserId},
     Bot,
 };
 
+use super::{add_wating_handle, auth_database, get_data_by_msg, handler::*, user_finish, QuestionData};
 use crate::{question, utils::*};
-
-use super::{
-    add_wating_handle, auth_database, get_data_by_msg, handler::*, user_finish, QuestionData,
-};
 
 async fn check_cas(bot: Bot, chat_id: ChatId, user_id: UserId, msg_id: i32) -> Result<()> {
     let ok = reqwest::get(Url::parse_with_params(
@@ -38,10 +32,7 @@ async fn check_cas(bot: Bot, chat_id: ChatId, user_id: UserId, msg_id: i32) -> R
         return Ok(());
     };
     let keyboard =
-        InlineKeyboardMarkup::default().append_row(vec![InlineKeyboardButton::callback(
-            "确认踢出",
-            "admin-ban",
-        )]);
+        InlineKeyboardMarkup::default().append_row(vec![InlineKeyboardButton::callback("确认踢出", "admin-ban")]);
     let res = bot
         .send_message(
             chat_id,
@@ -65,24 +56,15 @@ async fn check_cas(bot: Bot, chat_id: ChatId, user_id: UserId, msg_id: i32) -> R
 pub struct JoinHandler;
 
 impl Handler for JoinHandler {
-    async fn send_question(
-        &mut self,
-        bot: Bot,
-        user: User,
-        chat: Chat,
-        message_id: MessageId,
-    ) -> Result<()> {
+    async fn send_question(&mut self, bot: Bot, user: User, chat: Chat, message_id: MessageId) -> Result<()> {
         if user.is_bot {
             return Ok(());
         }
 
         if user.is_premium {
-            bot.send_message(
-                chat.id,
-                format!("Premium 用户 {}，欢迎！", metion_user(&user)),
-            )
-            .parse_mode(ParseMode::Html)
-            .await?;
+            bot.send_message(chat.id, format!("Premium 用户 {}，欢迎！", metion_user(&user)))
+                .parse_mode(ParseMode::Html)
+                .await?;
 
             return Ok(());
         }
@@ -148,15 +130,9 @@ impl Handler for JoinHandler {
         super::add_wating_user(msg.id, data).await;
 
         let bot2 = bot.clone();
-        let handle = tokio::spawn(super::waiting_answer(
-            bot.clone(),
-            msg.id,
-            |data| async move {
-                ban(bot2, data, Some(Utc::now() + Duration::minutes(10)))
-                    .await
-                    .ok();
-            },
-        ));
+        let handle = tokio::spawn(super::waiting_answer(bot.clone(), msg.id, |data| async move {
+            ban(bot2, data, Some(Utc::now() + Duration::minutes(10))).await.ok();
+        }));
         // add_wating_handle(msg.id, handle.abort_handle()).await;
 
         let bot2 = bot.clone();
@@ -210,12 +186,7 @@ impl Handler for JoinHandler {
         }
     }
 
-    async fn handle_other(
-        &mut self,
-        bot: Bot,
-        word: &str,
-        msg_id: MessageId,
-    ) -> Result<Option<String>> {
+    async fn handle_other(&mut self, bot: Bot, word: &str, msg_id: MessageId) -> Result<Option<String>> {
         if word == "admin-ban" {
             if let Some(data) = user_finish(msg_id).await {
                 ban(bot, data, None).await?;
@@ -234,11 +205,7 @@ impl Handler for JoinHandler {
 
 async fn allow(bot: Bot, (msg_id, data): (i32, QuestionData), remain_cas: bool) -> Result<()> {
     let res = bot
-        .restrict_chat_member(
-            data.chat_id,
-            data.user.id,
-            teloxide::types::ChatPermissions::all(),
-        )
+        .restrict_chat_member(data.chat_id, data.user.id, teloxide::types::ChatPermissions::all())
         .await;
     if let Err(err) = res {
         bot.send_message(
@@ -275,11 +242,7 @@ async fn allow(bot: Bot, (msg_id, data): (i32, QuestionData), remain_cas: bool) 
     Ok(())
 }
 
-pub async fn ban(
-    bot: Bot,
-    (msg_id, data): (i32, QuestionData),
-    until_date: Option<DateTime<Utc>>,
-) -> Result<()> {
+pub async fn ban(bot: Bot, (msg_id, data): (i32, QuestionData), until_date: Option<DateTime<Utc>>) -> Result<()> {
     let mut req = bot.ban_chat_member(data.chat_id, data.user.id);
     req.until_date = until_date;
     let res = req.await;

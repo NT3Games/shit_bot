@@ -1,12 +1,14 @@
+use std::fmt;
+
 use admin::handler::Handler;
 use anyhow::Result;
+use fancy_regex::Regex;
 use redis::AsyncCommands;
-use regex::Regex;
-use serde::Deserialize;
-use teloxide::{
-    dispatching::UpdateFilterExt, prelude::*, types::MessageId, utils::command::BotCommands,
-    RequestError,
+use serde::{
+    de::{self, Unexpected, Visitor},
+    Deserialize, Deserializer,
 };
+use teloxide::{dispatching::UpdateFilterExt, prelude::*, types::MessageId, utils::command::BotCommands, RequestError};
 use tokio::{fs::File, io::AsyncReadExt, sync::OnceCell};
 
 pub mod admin;
@@ -21,8 +23,32 @@ pub struct Config {
     pub admin_chat: ChatId,
     pub watch_list: Vec<UserId>,
     pub questions: Vec<question::Question>,
-    #[serde(with = "serde_regex")]
+    #[serde(deserialize_with = "de_regex")]
     pub forward_pattern: Regex,
+}
+
+fn de_regex<'de, D>(de: D) -> Result<Regex, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct RegexVisitor;
+
+    impl Visitor<'_> for RegexVisitor {
+        type Value = Regex;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            write!(formatter, "a string containing a regex")
+        }
+
+        fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Regex::new(s).map_err(|_e| de::Error::invalid_value(Unexpected::Str(s), &self))
+        }
+    }
+
+    de.deserialize_any(RegexVisitor)
 }
 
 static CLIENT: OnceCell<redis::Client> = OnceCell::const_new();
@@ -55,36 +81,26 @@ async fn main() -> Result<()> {
     let handler = dptree::entry()
         .branch(
             Update::filter_message()
-                .branch(Message::filter_new_chat_members().endpoint(
-                    |bot: Bot, msg: Message| async move {
+                .branch(
+                    Message::filter_new_chat_members().endpoint(|bot: Bot, msg: Message| async move {
                         if let Some(users) = msg.new_chat_members() {
                             for user in users {
                                 let res = admin::join_handler::JoinHandler
-                                    .send_question(
-                                        bot.clone(),
-                                        user.to_owned(),
-                                        msg.chat.clone(),
-                                        msg.id,
-                                    )
+                                    .send_question(bot.clone(), user.to_owned(), msg.chat.clone(), msg.id)
                                     .await;
 
                                 if let Err(err) = res {
-                                    bot.send_message(
-                                        CONFIG.get().unwrap().admin_chat,
-                                        format!("{}", err),
-                                    )
-                                    .await?;
+                                    bot.send_message(CONFIG.get().unwrap().admin_chat, format!("{}", err))
+                                        .await?;
                                     return Err(err);
                                 }
                             }
                         }
 
                         Ok(())
-                    },
-                ))
-                .branch(
-                    dptree::filter(|msg: Message| msg.is_automatic_forward()).endpoint(auto_unpin),
+                    }),
                 )
+                .branch(dptree::filter(|msg: Message| msg.is_automatic_forward()).endpoint(auto_unpin))
                 .branch(
                     dptree::filter_async(|msg: Message| async move {
                         if msg.text().is_none() || msg.from().is_none() {
@@ -103,9 +119,7 @@ async fn main() -> Result<()> {
                         let con = crate::get_client().await.get_async_connection().await;
                         let mut con = if let Ok(con) = con { con } else { return false };
 
-                        let res = con
-                            .sismember(admin::AUTHED_USERS_KEY, msg.from().unwrap().id.0)
-                            .await;
+                        let res = con.sismember(admin::AUTHED_USERS_KEY, msg.from().unwrap().id.0).await;
                         match res {
                             Ok(res) =>
                             {
@@ -126,20 +140,12 @@ async fn main() -> Result<()> {
                         log::debug!("Potential spam message");
                         if let Some(user) = msg.from() {
                             let res = admin::link_handler::LinkHandler
-                                .send_question(
-                                    bot.clone(),
-                                    user.to_owned(),
-                                    msg.chat.clone(),
-                                    msg.id,
-                                )
+                                .send_question(bot.clone(), user.to_owned(), msg.chat.clone(), msg.id)
                                 .await;
 
                             if let Err(err) = res {
-                                bot.send_message(
-                                    CONFIG.get().unwrap().admin_chat,
-                                    format!("{}", err),
-                                )
-                                .await?;
+                                bot.send_message(CONFIG.get().unwrap().admin_chat, format!("{}", err))
+                                    .await?;
                                 return Err(err);
                             }
                         }
@@ -147,11 +153,7 @@ async fn main() -> Result<()> {
                         Ok(())
                     }),
                 )
-                .branch(
-                    dptree::entry()
-                        .filter_command::<Command>()
-                        .endpoint(command_handle),
-                )
+                .branch(dptree::entry().filter_command::<Command>().endpoint(command_handle))
                 .branch(
                     dptree::filter(|msg: Message| {
                         let config = CONFIG.get().unwrap();
@@ -164,7 +166,7 @@ async fn main() -> Result<()> {
                         }
                         if let Some(text) = msg.text() {
                             let text = text.trim().replace(['\r', '\n'], "");
-                            config.forward_pattern.is_match(&text)
+                            config.forward_pattern.is_match(&text).unwrap()
                         } else {
                             false
                         }
@@ -181,25 +183,19 @@ async fn main() -> Result<()> {
                 Ok(())
             }),
         )
+        .branch(Update::filter_edited_message().branch(
+            dptree::filter(|msg: Message| msg.chat.id == CONFIG.get().unwrap().listen_chat).endpoint(edit_shit),
+        ))
         .branch(
-            Update::filter_edited_message().branch(
-                dptree::filter(|msg: Message| msg.chat.id == CONFIG.get().unwrap().listen_chat)
-                    .endpoint(edit_shit),
-            ),
-        )
-        .branch(Update::filter_callback_query().endpoint(
-            |bot: Bot, callback: CallbackQuery| async move {
+            Update::filter_callback_query().endpoint(|bot: Bot, callback: CallbackQuery| async move {
                 let result = admin::callback(bot.clone(), callback.clone()).await;
                 if let Err(e) = result {
-                    bot.send_message(
-                        callback.message.unwrap().chat.id,
-                        format!("Error: {}", e),
-                    )
-                    .await?;
+                    bot.send_message(callback.message.unwrap().chat.id, format!("Error: {}", e))
+                        .await?;
                 }
                 Ok(())
-            },
-        ));
+            }),
+        );
     // teloxide::commands_repl(bot, answer, Command::ty()).await;
 
     Dispatcher::builder(bot, handler)
@@ -254,15 +250,10 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
                     .await?;
                 return Ok(());
             };
-            let chat_member = bot
-                .get_chat_member(config.to_chat, message.from().unwrap().id)
-                .await;
+            let chat_member = bot.get_chat_member(config.to_chat, message.from().unwrap().id).await;
             if let Err(RequestError::Api(teloxide::ApiError::UserNotFound)) = chat_member {
                 let request = bot
-                    .send_message(
-                        message.chat.id,
-                        "请先加入 https://t.me/nipple_hill 以使用此命令",
-                    )
+                    .send_message(message.chat.id, "请先加入 https://t.me/nipple_hill 以使用此命令")
                     .reply_to_message_id(message.id);
                 replace_send(bot, request).await?;
                 return Ok(());
@@ -322,12 +313,8 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
                 } else {
                     let sender = reply.from().unwrap();
                     (
-                        bot.restrict_chat_member(
-                            message.chat.id,
-                            sender.id,
-                            teloxide::types::ChatPermissions::empty(),
-                        )
-                        .await,
+                        bot.restrict_chat_member(message.chat.id, sender.id, teloxide::types::ChatPermissions::empty())
+                            .await,
                         if let Some(username) = sender.username.as_ref() {
                             format!("{} (@{})", sender.full_name(), username)
                         } else {
@@ -394,10 +381,7 @@ async fn forward_shit(bot: Bot, message: Message) -> Result<()> {
     }
 
     let request = bot
-        .send_message(
-            message.chat.id,
-            format!("https://t.me/nipple_hill/{}", sent.id),
-        )
+        .send_message(message.chat.id, format!("https://t.me/nipple_hill/{}", sent.id))
         .reply_to_message_id(message.id)
         .disable_web_page_preview(true);
     replace_send(bot, request).await?;
@@ -433,10 +417,7 @@ async fn replace_send(
 }
 
 async fn auto_unpin(bot: Bot, message: Message) -> Result<()> {
-    let res = bot
-        .unpin_chat_message(message.chat.id)
-        .message_id(message.id)
-        .await;
+    let res = bot.unpin_chat_message(message.chat.id).message_id(message.id).await;
 
     if let Err(err) = res {
         bot.send_message(message.chat.id, err.to_string())

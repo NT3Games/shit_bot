@@ -2,31 +2,22 @@ use anyhow::Result;
 use teloxide::{
     payloads::SendMessageSetters,
     requests::Requester,
-    types::{
-        Chat, InlineKeyboardButton, InlineKeyboardMarkup, Message, MessageId, ParseMode, User,
-    },
+    types::{Chat, InlineKeyboardButton, InlineKeyboardMarkup, Message, MessageId, ParseMode, User},
     Bot,
 };
-
-use crate::{question, utils::*};
 
 use super::{
     add_wating_handle, auth_database, get_data_by_msg,
     handler::{res, Handler},
     user_finish, QuestionData,
 };
+use crate::{question, utils::*};
 
 #[derive(Debug, Clone, Copy)]
 pub struct LinkHandler;
 
 impl Handler for LinkHandler {
-    async fn send_question(
-        &mut self,
-        bot: Bot,
-        user: User,
-        chat: Chat,
-        message_id: MessageId,
-    ) -> Result<()> {
+    async fn send_question(&mut self, bot: Bot, user: User, chat: Chat, message_id: MessageId) -> Result<()> {
         if user.is_bot || user.is_premium || auth_database::is_authed(user.id.0).await? {
             return Ok(());
         }
@@ -63,13 +54,9 @@ impl Handler for LinkHandler {
 
         super::add_wating_user(msg.id, data).await;
 
-        let handle = tokio::spawn(super::waiting_answer(
-            bot.clone(),
-            msg.id,
-            |data| async move {
-                delete_sent_message(bot, data).await.ok();
-            },
-        ));
+        let handle = tokio::spawn(super::waiting_answer(bot.clone(), msg.id, |data| async move {
+            delete_sent_message(bot, data).await.ok();
+        }));
 
         // add_wating_handle(msg.id, handle.abort_handle()).await;
 
@@ -111,12 +98,7 @@ impl Handler for LinkHandler {
         }
     }
 
-    async fn handle_other(
-        &mut self,
-        bot: Bot,
-        word: &str,
-        msg_id: MessageId,
-    ) -> Result<Option<String>> {
+    async fn handle_other(&mut self, bot: Bot, word: &str, msg_id: MessageId) -> Result<Option<String>> {
         if word == "admin-ban" {
             if let Some(data) = user_finish(msg_id).await {
                 delete_sent_message(bot, data).await?;

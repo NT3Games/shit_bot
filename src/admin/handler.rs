@@ -61,13 +61,7 @@ pub enum HandlerKind {
 }
 
 impl Handler for HandlerKind {
-    async fn send_question(
-        &mut self,
-        bot: Bot,
-        user: User,
-        chat: Chat,
-        message_id: MessageId,
-    ) -> Result<()> {
+    async fn send_question(&mut self, bot: Bot, user: User, chat: Chat, message_id: MessageId) -> Result<()> {
         match self {
             HandlerKind::Join => {
                 super::join_handler::JoinHandler
@@ -97,16 +91,8 @@ impl Handler for HandlerKind {
 
     async fn handle_correct(&mut self, bot: Bot, msg_id: MessageId) -> Result<Option<String>> {
         match self {
-            HandlerKind::Join => {
-                super::join_handler::JoinHandler
-                    .handle_correct(bot, msg_id)
-                    .await
-            }
-            HandlerKind::Link => {
-                super::link_handler::LinkHandler
-                    .handle_correct(bot, msg_id)
-                    .await
-            }
+            HandlerKind::Join => super::join_handler::JoinHandler.handle_correct(bot, msg_id).await,
+            HandlerKind::Link => super::link_handler::LinkHandler.handle_correct(bot, msg_id).await,
             HandlerKind::Test => {
                 unimplemented!()
             }
@@ -115,39 +101,18 @@ impl Handler for HandlerKind {
 
     async fn handle_wrong(&mut self, bot: Bot, msg_id: MessageId) -> Result<Option<String>> {
         match self {
-            HandlerKind::Join => {
-                super::join_handler::JoinHandler
-                    .handle_wrong(bot, msg_id)
-                    .await
-            }
-            HandlerKind::Link => {
-                super::link_handler::LinkHandler
-                    .handle_wrong(bot, msg_id)
-                    .await
-            }
+            HandlerKind::Join => super::join_handler::JoinHandler.handle_wrong(bot, msg_id).await,
+            HandlerKind::Link => super::link_handler::LinkHandler.handle_wrong(bot, msg_id).await,
             HandlerKind::Test => {
                 unimplemented!()
             }
         }
     }
 
-    async fn handle_other(
-        &mut self,
-        bot: Bot,
-        word: &str,
-        msg_id: MessageId,
-    ) -> Result<Option<String>> {
+    async fn handle_other(&mut self, bot: Bot, word: &str, msg_id: MessageId) -> Result<Option<String>> {
         match self {
-            HandlerKind::Join => {
-                super::join_handler::JoinHandler
-                    .handle_other(bot, word, msg_id)
-                    .await
-            }
-            HandlerKind::Link => {
-                super::link_handler::LinkHandler
-                    .handle_other(bot, word, msg_id)
-                    .await
-            }
+            HandlerKind::Join => super::join_handler::JoinHandler.handle_other(bot, word, msg_id).await,
+            HandlerKind::Link => super::link_handler::LinkHandler.handle_other(bot, word, msg_id).await,
             HandlerKind::Test => {
                 unimplemented!()
             }
