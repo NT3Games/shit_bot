@@ -178,7 +178,7 @@ async fn main() -> Result<()> {
             Update::filter_channel_post().endpoint(|_bot: Bot, msg: Message| async move {
                 if msg.chat.id == CONFIG.get().unwrap().to_chat {
                     let mut con = get_client().await.get_async_connection().await?;
-                    con.set(LAST_SENT_KEY, msg.id.0).await?;
+                    () = con.set(LAST_SENT_KEY, msg.id.0).await?;
                 }
                 Ok(())
             }),
@@ -377,7 +377,7 @@ async fn forward_shit(bot: Bot, message: Message) -> Result<()> {
 
     {
         let mut con = get_client().await.get_async_connection().await?;
-        con.set(LAST_SHIT_KEY, sent.id.0).await?;
+        () = con.set(LAST_SHIT_KEY, sent.id.0).await?;
     }
 
     let request = bot
@@ -388,7 +388,7 @@ async fn forward_shit(bot: Bot, message: Message) -> Result<()> {
 
     {
         let mut con = get_client().await.get_async_connection().await?;
-        con.set(message.id.0, sent.id.0).await?;
+        () = con.set(message.id.0, sent.id.0).await?;
     }
 
     Ok(())
@@ -409,7 +409,7 @@ async fn replace_send(
 
     let mut con = get_client().await.get_async_connection().await?;
     let last: Option<i32> = con.get(LAST_SENT_KEY).await?;
-    con.set(LAST_SENT_KEY, res.id.0).await?;
+    () = con.set(LAST_SENT_KEY, res.id.0).await?;
     if let Some(id) = last {
         bot.delete_message(source, MessageId(id)).await?;
     }

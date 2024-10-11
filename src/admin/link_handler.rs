@@ -7,7 +7,7 @@ use teloxide::{
 };
 
 use super::{
-    add_wating_handle, auth_database, get_data_by_msg,
+    auth_database, get_data_by_msg,
     handler::{res, Handler},
     user_finish, QuestionData,
 };
@@ -54,7 +54,7 @@ impl Handler for LinkHandler {
 
         super::add_wating_user(msg.id, data).await;
 
-        let handle = tokio::spawn(super::waiting_answer(bot.clone(), msg.id, |data| async move {
+        let _handle = tokio::spawn(super::waiting_answer(bot.clone(), msg.id, |data| async move {
             delete_sent_message(bot, data).await.ok();
         }));
 
@@ -122,7 +122,7 @@ async fn delete_sent_message(bot: Bot, (msg_id, data): (i32, QuestionData)) -> R
     Ok(())
 }
 
-async fn allow_send_message(bot: Bot, (msg_id, data): (i32, QuestionData)) -> Result<()> {
+async fn allow_send_message(_bot: Bot, (msg_id, data): (i32, QuestionData)) -> Result<()> {
     super::TO_DELETE_MESSAGE.push((data.chat_id, MessageId(msg_id)));
 
     Ok(())

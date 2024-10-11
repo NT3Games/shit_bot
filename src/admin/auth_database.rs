@@ -10,7 +10,7 @@ pub async fn is_authed(user_id: u64) -> Result<bool> {
 
 pub async fn add_authed(user_id: u64) -> Result<()> {
     let mut con = crate::get_client().await.get_async_connection().await?;
-    con.sadd(AUTHED_USERS_KEY, user_id).await?;
+    () = con.sadd(AUTHED_USERS_KEY, user_id).await?;
 
     Ok(())
 }

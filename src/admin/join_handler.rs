@@ -9,7 +9,7 @@ use teloxide::{
     Bot,
 };
 
-use super::{add_wating_handle, auth_database, get_data_by_msg, handler::*, user_finish, QuestionData};
+use super::{auth_database, get_data_by_msg, handler::*, user_finish, QuestionData};
 use crate::{question, utils::*};
 
 async fn check_cas(bot: Bot, chat_id: ChatId, user_id: UserId, msg_id: i32) -> Result<()> {
@@ -130,7 +130,7 @@ impl Handler for JoinHandler {
         super::add_wating_user(msg.id, data).await;
 
         let bot2 = bot.clone();
-        let handle = tokio::spawn(super::waiting_answer(bot.clone(), msg.id, |data| async move {
+        let _handle = tokio::spawn(super::waiting_answer(bot.clone(), msg.id, |data| async move {
             ban(bot2, data, Some(Utc::now() + Duration::minutes(10))).await.ok();
         }));
         // add_wating_handle(msg.id, handle.abort_handle()).await;

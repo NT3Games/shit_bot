@@ -52,7 +52,7 @@ pub async fn send_and_delete_join_result(bot: Bot, chat_id: ChatId, message: Str
 
     let mut con = crate::get_client().await.get_async_connection().await?;
     let last: Option<i32> = con.get(format!("{}/{}", LAST_JOIN_RESULT_KEY, chat_id)).await?;
-    con.set(LAST_JOIN_RESULT_KEY, res.id.0).await?;
+    () = con.set(LAST_JOIN_RESULT_KEY, res.id.0).await?;
     if let Some(id) = last {
         bot.delete_message(chat_id, MessageId(id)).await?;
     }
