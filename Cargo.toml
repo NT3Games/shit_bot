@@ -7,22 +7,20 @@ edition = "2021"
 
 [dependencies]
 log = "0.4.17"
-pretty_env_logger = "0.4.0"
+pretty_env_logger = "0.5.0"
 teloxide = { version = "0.13.0", features = ["macros"] }
 tokio = { version = "1.21.1", features = [
   "macros",
   "rt-multi-thread",
   "parking_lot",
 ] }
-redis = { version = "0.21.6", features = [
-  "tokio-comp",
-], default-features = false }
+redis = { version = "0.27.4", features = ["tokio-comp"], default-features = false }
 anyhow = "1.0.65"
 serde = { version = "1.0", features = ["serde_derive"] }
 serde_yaml = "0.9.13"
 chrono = "0.4.22"
 rand = "0.8.5"
-reqwest = "0.11.11"
+reqwest = { version = "0.12.8", features = ["json"] }
 htmlescape = "0.3.1"
 serde_regex = "1.1.0"
 fancy-regex = "*"

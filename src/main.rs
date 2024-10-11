@@ -3,7 +3,7 @@ use std::fmt;
 use admin::handler::Handler;
 use anyhow::Result;
 use fancy_regex::Regex;
-use redis::AsyncCommands;
+use redis::{aio::MultiplexedConnection, AsyncCommands};
 use serde::{
     de::{self, Unexpected, Visitor},
     Deserialize, Deserializer,
@@ -59,6 +59,13 @@ async fn get_client() -> &'static redis::Client {
     CLIENT
         .get_or_init(|| async { redis::Client::open("unix:///run/redis/redis.sock").unwrap() })
         .await
+}
+static CONNECTION: OnceCell<MultiplexedConnection> = OnceCell::const_new();
+async fn get_connection() -> MultiplexedConnection {
+    CONNECTION
+        .get_or_init(|| async { get_client().await.get_multiplexed_async_connection().await.unwrap() })
+        .await
+        .clone()
 }
 
 pub static CONFIG: OnceCell<Config> = OnceCell::const_new();
@@ -119,8 +126,7 @@ async fn main() -> Result<()> {
                         } else {
                             return false;
                         }
-                        let con = crate::get_client().await.get_async_connection().await;
-                        let mut con = if let Ok(con) = con { con } else { return false };
+                        let mut con = crate::get_connection().await;
 
                         let res = con.sismember(admin::AUTHED_USERS_KEY, msg.from.unwrap().id.0).await;
                         match res {
@@ -180,7 +186,7 @@ async fn main() -> Result<()> {
         .branch(
             Update::filter_channel_post().endpoint(|_bot: Bot, msg: Message| async move {
                 if msg.chat.id == CONFIG.get().unwrap().to_chat {
-                    let mut con = get_client().await.get_async_connection().await?;
+                    let mut con = get_connection().await;
                     () = con.set(LAST_SENT_KEY, msg.id.0).await?;
                 }
                 Ok(())
@@ -278,7 +284,7 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
         }
         Command::Pull => {
             let id: Option<i32> = {
-                let mut con = get_client().await.get_async_connection().await?;
+                let mut con = get_connection().await;
                 con.get(LAST_SHIT_KEY).await?
             };
             let text = if let Some(id) = id {
@@ -363,7 +369,7 @@ async fn edit_shit(bot: Bot, message: Message) -> Result<()> {
         return Ok(());
     }
     let sent: Option<i32> = {
-        let mut con = get_client().await.get_async_connection().await?;
+        let mut con = get_connection().await;
         con.get(message.id.0).await?
     };
 
@@ -381,7 +387,7 @@ async fn forward_shit(bot: Bot, message: Message) -> Result<()> {
         .await?;
 
     {
-        let mut con = get_client().await.get_async_connection().await?;
+        let mut con = get_connection().await;
         () = con.set(LAST_SHIT_KEY, sent.id.0).await?;
     }
 
@@ -392,7 +398,7 @@ async fn forward_shit(bot: Bot, message: Message) -> Result<()> {
     replace_send(bot, request).await?;
 
     {
-        let mut con = get_client().await.get_async_connection().await?;
+        let mut con = get_connection().await;
         () = con.set(message.id.0, sent.id.0).await?;
     }
 
@@ -412,7 +418,7 @@ async fn replace_send(
     }
     let res = message.await?;
 
-    let mut con = get_client().await.get_async_connection().await?;
+    let mut con = get_connection().await;
     let last: Option<i32> = con.get(LAST_SENT_KEY).await?;
     () = con.set(LAST_SENT_KEY, res.id.0).await?;
     if let Some(id) = last {
