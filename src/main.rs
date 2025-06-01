@@ -117,10 +117,11 @@ async fn main() -> Result<()> {
                             return false;
                         }
                         if let Some(entities) = msg.entities() {
-                            if !entities.iter().any(|e| {
-                                e.kind == teloxide::types::MessageEntityKind::Url
-                                    || e.kind == teloxide::types::MessageEntityKind::Mention
-                            }) {
+                            use teloxide::types::MessageEntityKind::*;
+                            if !entities
+                                .iter()
+                                .any(|e| matches!(e.kind, Url | Mention | TextLink { .. } | TextMention { .. }))
+                            {
                                 return false;
                             }
                         } else {
