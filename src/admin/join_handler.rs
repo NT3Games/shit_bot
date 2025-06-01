@@ -1,6 +1,6 @@
 use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
-use rand::{thread_rng, Rng};
+use rand::{rng, Rng};
 use reqwest::Url;
 use teloxide::{
     payloads::{EditMessageTextSetters, SendMessageSetters},
@@ -172,7 +172,7 @@ impl Handler for JoinHandler {
                 ban(bot, data, Some(Utc::now() + Duration::minutes(10))).await?;
             }
             res!("验证失败，失败次数过多，请十分钟后重新加入")
-        } else if tried_times == 0 && thread_rng().gen_bool(rank) {
+        } else if tried_times == 0 && rng().random_bool(rank) {
             if let Some(data) = user_finish(msg_id).await {
                 allow(bot, data, true).await?;
             }
