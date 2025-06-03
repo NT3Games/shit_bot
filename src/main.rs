@@ -113,20 +113,21 @@ async fn main() -> Result<()> {
                 .branch(dptree::filter(|msg: Message| msg.is_automatic_forward()).endpoint(auto_unpin))
                 .branch(
                     dptree::filter_async(|msg: Message| async move {
-                        if msg.text().is_none() || msg.from.is_none() {
+                        if msg.from.is_none() {
                             return false;
                         }
-                        if let Some(entities) = msg.entities() {
-                            use teloxide::types::MessageEntityKind::*;
-                            if !entities
-                                .iter()
-                                .any(|e| matches!(e.kind, Url | Mention | TextLink { .. } | TextMention { .. }))
-                            {
-                                return false;
-                            }
-                        } else {
+
+                        use teloxide::types::MessageEntityKind::*;
+                        let has_link = [msg.entities(), msg.caption_entities()]
+                            .into_iter()
+                            .flatten()
+                            .flatten()
+                            .any(|e| matches!(e.kind, Url | Mention | TextLink { .. } | TextMention { .. }));
+
+                        if !has_link {
                             return false;
                         }
+
                         let mut con = crate::get_connection().await;
 
                         let res = con.sismember(admin::AUTHED_USERS_KEY, msg.from.unwrap().id.0).await;
