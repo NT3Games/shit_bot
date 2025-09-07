@@ -15,7 +15,7 @@ use tokio::{
     time::sleep,
 };
 
-use crate::{question, utils::*, Bot};
+use crate::{Bot, question, utils::*};
 
 pub mod auth_database;
 pub mod handler;

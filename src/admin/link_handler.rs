@@ -6,11 +6,11 @@ use teloxide::{
 };
 
 use super::{
-    auth_database, get_data_by_msg,
-    handler::{res, Handler},
-    user_finish, QuestionData,
+    QuestionData, auth_database, get_data_by_msg,
+    handler::{Handler, res},
+    user_finish,
 };
-use crate::{question, utils::*, Bot};
+use crate::{Bot, question, utils::*};
 
 #[derive(Debug, Clone, Copy)]
 pub struct LinkHandler;

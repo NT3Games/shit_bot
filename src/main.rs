@@ -1,18 +1,27 @@
+#![feature(specialization)]
 use std::fmt;
 
 use admin::handler::Handler;
 use anyhow::Result;
 use fancy_regex::Regex;
-use redis::{aio::MultiplexedConnection, AsyncCommands};
+use redis::{AsyncCommands, aio::MultiplexedConnection};
 use serde::{
-    de::{self, Unexpected, Visitor},
     Deserialize, Deserializer,
+    de::{self, Unexpected, Visitor},
 };
-use teloxide::{dispatching::UpdateFilterExt, prelude::*, types::MessageId, utils::command::BotCommands, RequestError};
+use teloxide::{
+    RequestError,
+    dispatching::UpdateFilterExt,
+    prelude::*,
+    types::MessageId,
+    update_listeners::{self},
+    utils::command::BotCommands,
+};
 use tokio::{fs::File, io::AsyncReadExt, sync::OnceCell};
 use utils::EasySendMessage;
 
 pub mod admin;
+pub mod error;
 pub mod question;
 pub mod utils;
 
@@ -105,6 +114,8 @@ async fn main() -> Result<()> {
                                     return Err(err);
                                 }
                             }
+                        } else {
+                            log::warn!("New chat members without users");
                         }
 
                         Ok(())
@@ -207,19 +218,18 @@ async fn main() -> Result<()> {
                 Ok(())
             }),
         );
-    // teloxide::commands_repl(bot, answer, Command::ty()).await;
+
+    let polling = update_listeners::polling_default(bot.clone()).await;
 
     Dispatcher::builder(bot, handler)
         // .dependencies(dptree::deps![parameters])
         .default_handler(|upd| async move {
             log::trace!("Unhandled update: {:?}", upd);
         })
-        .error_handler(LoggingErrorHandler::with_custom_text(
-            "An error has occurred in the dispatcher",
-        ))
+        .error_handler(LoggingErrorHandler::with_custom_text("Dispatcher"))
         .enable_ctrlc_handler()
         .build()
-        .dispatch()
+        .dispatch_with_listener(polling, error::UpdateErrorHandler::new())
         .await;
 
     Ok(())

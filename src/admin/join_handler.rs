@@ -1,6 +1,6 @@
 use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
-use rand::{rng, Rng};
+use rand::{Rng, rng};
 use reqwest::Url;
 use teloxide::{
     payloads::{EditMessageTextSetters, SendMessageSetters},
@@ -8,8 +8,8 @@ use teloxide::{
     types::{Chat, ChatId, InlineKeyboardButton, InlineKeyboardMarkup, Message, MessageId, ParseMode, User, UserId},
 };
 
-use super::{auth_database, get_data_by_msg, handler::*, user_finish, QuestionData};
-use crate::{question, utils::*, Bot};
+use super::{QuestionData, auth_database, get_data_by_msg, handler::*, user_finish};
+use crate::{Bot, question, utils::*};
 
 async fn check_cas(bot: Bot, chat_id: ChatId, user_id: UserId, msg_id: i32) -> Result<()> {
     let ok = reqwest::get(Url::parse_with_params(

@@ -1,4 +1,4 @@
-use rand::{rng, seq::IndexedRandom, Rng};
+use rand::{Rng, rng, seq::IndexedRandom};
 use serde::Deserialize;
 
 use crate::CONFIG;
