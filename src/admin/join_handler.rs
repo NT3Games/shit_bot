@@ -55,7 +55,8 @@ async fn check_cas(bot: Bot, chat_id: ChatId, user_id: UserId, msg_id: i32) -> R
 pub struct JoinHandler;
 
 impl Handler for JoinHandler {
-    async fn send_question(&mut self, bot: Bot, user: User, chat: Chat, message_id: MessageId) -> Result<()> {
+    type Id = ();
+    async fn send_question(&mut self, bot: Bot, user: User, chat: Chat, _: ()) -> Result<()> {
         if user.is_bot {
             return Ok(());
         }
@@ -90,7 +91,7 @@ impl Handler for JoinHandler {
         let data = super::QuestionData {
             user: user.clone(),
             chat_id: chat.id,
-            message_id,
+            message_id: None,
             title,
             options,
             correct: correct_idx,
@@ -250,7 +251,7 @@ pub async fn ban(bot: Bot, (msg_id, data): (i32, QuestionData), until_date: Opti
         return Err(err.into());
     }
     super::TO_DELETE_MESSAGE.push((data.chat_id, MessageId(msg_id)));
-    bot.delete_message(data.chat_id, data.message_id).await?;
+    // bot.delete_message(data.chat_id, data.message_id).await?;
     if let Some(cas) = data.cas {
         bot.delete_message(data.chat_id, cas).await?;
     }

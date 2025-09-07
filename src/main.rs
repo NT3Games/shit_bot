@@ -1,4 +1,7 @@
+#![feature(associated_type_defaults)]
+#![allow(incomplete_features)]
 #![feature(specialization)]
+
 use std::fmt;
 
 use admin::handler::Handler;
@@ -99,28 +102,30 @@ async fn main() -> Result<()> {
 
     let handler = dptree::entry()
         .branch(
+            Update::filter_chat_member()
+                .filter(|update: ChatMemberUpdated| {
+                    !update.old_chat_member.is_present() && update.new_chat_member.is_present()
+                })
+                .endpoint(|bot: Bot, update: ChatMemberUpdated| async move {
+                    let res = admin::join_handler::JoinHandler
+                        .send_question(
+                            bot.clone(),
+                            update.new_chat_member.user.clone(),
+                            update.chat.clone(),
+                            (),
+                        )
+                        .await;
+
+                    if let Err(err) = res {
+                        bot.send_message(CONFIG.get().unwrap().admin_chat, format!("{}", err))
+                            .await?;
+                        return Err(err);
+                    }
+                    Ok(())
+                }),
+        )
+        .branch(
             Update::filter_message()
-                .branch(
-                    Message::filter_new_chat_members().endpoint(|bot: Bot, msg: Message| async move {
-                        if let Some(users) = msg.new_chat_members() {
-                            for user in users {
-                                let res = admin::join_handler::JoinHandler
-                                    .send_question(bot.clone(), user.to_owned(), msg.chat.clone(), msg.id)
-                                    .await;
-
-                                if let Err(err) = res {
-                                    bot.send_message(CONFIG.get().unwrap().admin_chat, format!("{}", err))
-                                        .await?;
-                                    return Err(err);
-                                }
-                            }
-                        } else {
-                            log::warn!("New chat members without users");
-                        }
-
-                        Ok(())
-                    }),
-                )
                 .branch(dptree::filter(|msg: Message| msg.is_automatic_forward()).endpoint(auto_unpin))
                 .branch(
                     dptree::filter_async(|msg: Message| async move {

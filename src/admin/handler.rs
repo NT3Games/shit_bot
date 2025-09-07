@@ -4,12 +4,14 @@ use teloxide::types::{Chat, InlineKeyboardMarkup, MessageId, User};
 use crate::Bot;
 
 pub trait Handler {
+    type Id = MessageId;
+
     fn send_question(
         &mut self,
         bot: Bot,
         user: User,
         chat: Chat,
-        message_id: MessageId,
+        message_id: Self::Id,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     fn keyboard_patch(&self, keyboard: InlineKeyboardMarkup) -> InlineKeyboardMarkup {
@@ -64,7 +66,7 @@ impl Handler for HandlerKind {
         match self {
             HandlerKind::Join => {
                 super::join_handler::JoinHandler
-                    .send_question(bot, user, chat, message_id)
+                    .send_question(bot, user, chat, ())
                     .await
             }
             HandlerKind::Link => {

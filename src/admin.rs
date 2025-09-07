@@ -28,7 +28,7 @@ pub const AUTHED_USERS_KEY: &str = "shit_bot_authed_users";
 pub struct QuestionData {
     pub user: User,
     pub chat_id: ChatId,
-    pub message_id: MessageId, // may the new member message or spam message
+    pub message_id: Option<MessageId>, // spam message
     pub correct: usize,
     pub title: &'static str,
     pub options: Vec<&'static String>,

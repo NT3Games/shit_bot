@@ -26,7 +26,7 @@ impl Handler for LinkHandler {
         let data = QuestionData {
             user: user.clone(),
             chat_id: chat.id,
-            message_id,
+            message_id: Some(message_id),
             title,
             options,
             correct: correct_idx,
@@ -116,7 +116,9 @@ impl Handler for LinkHandler {
 
 async fn delete_sent_message(bot: Bot, (msg_id, data): (i32, QuestionData)) -> Result<()> {
     super::TO_DELETE_MESSAGE.push((data.chat_id, MessageId(msg_id)));
-    bot.delete_message(data.chat_id, data.message_id).await?;
+    if let Some(spam_msg_id) = data.message_id {
+        bot.delete_message(data.chat_id, spam_msg_id).await?;
+    }
 
     Ok(())
 }
