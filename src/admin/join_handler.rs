@@ -1,5 +1,6 @@
 use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
+use log::debug;
 use rand::{Rng, rng};
 use reqwest::Url;
 use teloxide::{
@@ -9,7 +10,7 @@ use teloxide::{
 };
 
 use super::{QuestionData, auth_database, get_data_by_msg, handler::*, user_finish};
-use crate::{Bot, question, utils::*};
+use crate::{Bot, CONFIG, question, utils::*};
 
 async fn check_cas(bot: Bot, chat_id: ChatId, user_id: UserId, msg_id: i32) -> Result<()> {
     let ok = reqwest::get(Url::parse_with_params(
@@ -51,6 +52,13 @@ async fn check_cas(bot: Bot, chat_id: ChatId, user_id: UserId, msg_id: i32) -> R
     Ok(())
 }
 
+pub async fn in_master_channel(bot: &Bot, user_id: UserId) -> Result<bool> {
+    let member = bot
+        .get_chat_member(CONFIG.get().unwrap().master_channel, user_id)
+        .await?;
+    Ok(member.is_present())
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct JoinHandler;
 
@@ -61,16 +69,42 @@ impl Handler for JoinHandler {
             return Ok(());
         }
 
-        if user.is_premium {
-            bot.send_message(chat.id, format!("Premium 用户 {}，欢迎！", metion_user(&user)))
+        if auth_database::is_authed(user.id.0).await? {
+            bot.send_message(chat.id, format!("{}，欢迎！", metion_user(&user)))
                 .parse_mode(ParseMode::Html)
                 .await?;
 
             return Ok(());
         }
 
-        if auth_database::is_authed(user.id.0).await? {
-            bot.send_message(chat.id, format!("{}，欢迎！", metion_user(&user)))
+        let in_channel = in_master_channel(&bot, user.id).await;
+        debug!("user {} in master channel: {:?}", user.full_name(), in_channel);
+        match in_channel {
+            Ok(true) => {}
+            Ok(false) => {
+                let mut req = bot.ban_chat_member(chat.id, user.id);
+                req.until_date = Some(Utc::now() + Duration::minutes(1));
+                if let Err(err) = req.await {
+                    bot.send_message(
+                        chat.id,
+                        format!("用户 {} 未加入主频道，但是踢出用户失败：{}", metion_user(&user), err),
+                    )
+                    .parse_mode(ParseMode::Html)
+                    .await?;
+                } else {
+                    return Ok(());
+                }
+            }
+            Err(err) => {
+                bot.send_message(chat.id, format!("检查 {} 频道存在失败：{}", metion_user(&user), err))
+                    .parse_mode(ParseMode::Html)
+                    .await
+                    .ok();
+            }
+        }
+
+        if user.is_premium {
+            bot.send_message(chat.id, format!("Premium 用户 {}，欢迎！", metion_user(&user)))
                 .parse_mode(ParseMode::Html)
                 .await?;
 

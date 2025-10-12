@@ -36,6 +36,7 @@ pub struct Config {
     pub to_chat: ChatId,
     pub listen_chat: ChatId,
     pub admin_chat: ChatId,
+    pub master_channel: ChatId,
     pub watch_list: Vec<UserId>,
     pub questions: Vec<question::Question>,
     #[serde(deserialize_with = "de_regex")]
