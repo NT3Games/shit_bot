@@ -92,6 +92,7 @@ impl Handler for JoinHandler {
                     .parse_mode(ParseMode::Html)
                     .await?;
                 } else {
+                    let _ = admin_log(bot, format!("用户 {} 未加入主频道，已提出。", metion_user(&user))).await;
                     return Ok(());
                 }
             }
