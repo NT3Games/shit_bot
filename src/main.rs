@@ -35,7 +35,8 @@ pub struct Config {
     pub token: String,
     pub to_chat: ChatId,
     pub listen_chat: ChatId,
-    pub admin_chat: ChatId,
+    pub manage_chat: ChatId,
+    pub admin_log: ChatId,
     pub master_channel: ChatId,
     pub watch_list: Vec<UserId>,
     pub questions: Vec<question::Question>,
@@ -105,7 +106,9 @@ async fn main() -> Result<()> {
         .branch(
             Update::filter_chat_member()
                 .filter(|update: ChatMemberUpdated| {
-                    !update.old_chat_member.is_present() && update.new_chat_member.is_present()
+                    update.chat.id == CONFIG.get().unwrap().manage_chat
+                        && !update.old_chat_member.is_present()
+                        && update.new_chat_member.is_present()
                 })
                 .endpoint(|bot: Bot, update: ChatMemberUpdated| async move {
                     let res = admin::join_handler::JoinHandler
@@ -118,7 +121,7 @@ async fn main() -> Result<()> {
                         .await;
 
                     if let Err(err) = res {
-                        bot.send_message(CONFIG.get().unwrap().admin_chat, format!("{}", err))
+                        bot.send_message(CONFIG.get().unwrap().admin_log, format!("{}", err))
                             .await?;
                         return Err(err);
                     }
@@ -131,6 +134,10 @@ async fn main() -> Result<()> {
                 .branch(
                     dptree::filter_async(|msg: Message| async move {
                         if msg.from.is_none() {
+                            return false;
+                        }
+
+                        if !(msg.chat.id == CONFIG.get().unwrap().manage_chat) {
                             return false;
                         }
 
@@ -172,7 +179,7 @@ async fn main() -> Result<()> {
                                 .await;
 
                             if let Err(err) = res {
-                                bot.send_message(CONFIG.get().unwrap().admin_chat, format!("{}", err))
+                                bot.send_message(CONFIG.get().unwrap().admin_log, format!("{}", err))
                                     .await?;
                                 return Err(err);
                             }

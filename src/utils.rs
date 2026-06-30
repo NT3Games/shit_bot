@@ -41,7 +41,7 @@ pub fn rank_user(user: &User) -> f64 {
 }
 
 pub async fn send_and_delete_join_result(bot: Bot, chat_id: ChatId, message: String) -> Result<()> {
-    bot.send_message(crate::CONFIG.get().unwrap().admin_chat, message.clone())
+    bot.send_message(crate::CONFIG.get().unwrap().admin_log, message.clone())
         .parse_mode(ParseMode::Html)
         .disable_web_page_preview()
         .await?;
@@ -62,7 +62,7 @@ pub async fn send_and_delete_join_result(bot: Bot, chat_id: ChatId, message: Str
 }
 
 pub async fn admin_log(bot: Bot, message: String) -> Result<()> {
-    bot.send_message(crate::CONFIG.get().unwrap().admin_chat, message)
+    bot.send_message(crate::CONFIG.get().unwrap().admin_log, message)
         .await?;
 
     Ok(())
