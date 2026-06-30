@@ -42,6 +42,7 @@ pub struct Config {
     pub questions: Vec<question::Question>,
     #[serde(deserialize_with = "de_regex")]
     pub forward_pattern: Regex,
+    pub redis: String,
 }
 
 fn de_regex<'de, D>(de: D) -> Result<Regex, D::Error>
@@ -69,15 +70,11 @@ where
 }
 
 static CLIENT: OnceCell<redis::Client> = OnceCell::const_new();
-async fn get_client() -> &'static redis::Client {
-    CLIENT
-        .get_or_init(|| async { redis::Client::open("unix:///run/redis/redis.sock").unwrap() })
-        .await
-}
+
 static CONNECTION: OnceCell<MultiplexedConnection> = OnceCell::const_new();
 async fn get_connection() -> MultiplexedConnection {
     CONNECTION
-        .get_or_init(|| async { get_client().await.get_multiplexed_async_connection().await.unwrap() })
+        .get_or_init(|| async { CLIENT.get().expect("Redis client not initialized").get_multiplexed_async_connection().await.unwrap() })
         .await
         .clone()
 }
@@ -97,6 +94,7 @@ async fn main() -> Result<()> {
     f.read_to_end(&mut buf).await?;
 
     let config = serde_yaml::from_slice::<Config>(&buf)?;
+    CLIENT.set(redis::Client::open(config.redis.clone()).unwrap()).unwrap();
 
     let bot = teloxide::Bot::new(config.token.clone());
 
