@@ -14,3 +14,8 @@ pub async fn add_authed(user_id: u64) -> Result<()> {
 
     Ok(())
 }
+
+pub async fn count_authed() -> Result<usize> {
+    let mut con = crate::get_connection().await;
+    Ok(con.scard(AUTHED_USERS_KEY).await?)
+}

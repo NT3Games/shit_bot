@@ -2,10 +2,11 @@
 #![allow(incomplete_features)]
 #![feature(specialization)]
 
-use std::{fmt, path::Path};
+use std::{fmt, path::Path, time::Instant};
 
 use admin::handler::Handler;
 use anyhow::{Result, bail};
+use chrono::Local;
 use fancy_regex::Regex;
 use redis::{AsyncCommands, aio::MultiplexedConnection};
 use serde::{
@@ -286,7 +287,32 @@ async fn main() -> Result<()> {
 
     let polling = update_listeners::polling_default(bot.clone()).await;
 
-    Dispatcher::builder(bot, handler)
+    let start_time = Local::now();
+    let start_instant = Instant::now();
+    let pid = std::process::id();
+    let cfg = CONFIG.get().unwrap();
+    let authed_count = admin::auth_database::count_authed()
+        .await
+        .map(|c| c.to_string())
+        .unwrap_or_else(|e| {
+            log::error!("Failed to count authed users from Redis: {}", e);
+            "获取失败".to_string()
+        });
+
+    let startup_msg = format!(
+        "<b>🚀 机器人启动成功</b>\n\
+         <b>PID：</b><code>{}</code>\n\
+         <b>启动时间：</b><code>{}</code>\n\
+         <b>已通过验证人数：</b><code>{}</code> 人\n\
+         <b>题库数量：</b><code>{}</code> 题",
+        pid,
+        start_time.format("%Y-%m-%d %H:%M:%S %:z"),
+        authed_count,
+        cfg.questions.len(),
+    );
+    utils::admin_log(bot.clone(), startup_msg).await.ok();
+
+    Dispatcher::builder(bot.clone(), handler)
         // .dependencies(dptree::deps![parameters])
         .default_handler(|upd| async move {
             log::trace!("Unhandled update: {:?}", upd);
@@ -297,7 +323,39 @@ async fn main() -> Result<()> {
         .dispatch_with_listener(polling, error::UpdateErrorHandler::new())
         .await;
 
+    let stop_time = Local::now();
+    let uptime = format_duration(start_instant.elapsed());
+
+    let shutdown_msg = format!(
+        "<b>🛑 机器人已关闭</b>\n\
+         <b>PID：</b><code>{}</code>\n\
+         <b>停止时间：</b><code>{}</code>\n\
+         <b>运行时长：</b><code>{}</code>",
+        pid,
+        stop_time.format("%Y-%m-%d %H:%M:%S %:z"),
+        uptime,
+    );
+    utils::admin_log(bot, shutdown_msg).await.ok();
+
     Ok(())
+}
+
+fn format_duration(duration: std::time::Duration) -> String {
+    let total_secs = duration.as_secs();
+    let days = total_secs / 86400;
+    let hours = (total_secs % 86400) / 3600;
+    let mins = (total_secs % 3600) / 60;
+    let secs = total_secs % 60;
+
+    if days > 0 {
+        format!("{}天 {}小时 {}分 {}秒", days, hours, mins, secs)
+    } else if hours > 0 {
+        format!("{}小时 {}分 {}秒", hours, mins, secs)
+    } else if mins > 0 {
+        format!("{}分 {}秒", mins, secs)
+    } else {
+        format!("{}.{:02}秒", secs, duration.subsec_millis() / 10)
+    }
 }
 
 #[derive(BotCommands, Clone)]

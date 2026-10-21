@@ -22,8 +22,6 @@ chrono = "0.4.22"
 rand = "0.9.1"
 reqwest = { version = "0.12.8", default-features = false, features = ["json", "rustls-tls"] }
 htmlescape = "0.3.1"
-serde_regex = "1.1.0"
 fancy-regex = "*"
-dyn-clone = "1.0.17"
 crossbeam-queue = "0.3.11"
 futures = "*"
