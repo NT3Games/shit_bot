@@ -2,10 +2,10 @@
 #![allow(incomplete_features)]
 #![feature(specialization)]
 
-use std::fmt;
+use std::{fmt, path::Path};
 
 use admin::handler::Handler;
-use anyhow::Result;
+use anyhow::{Result, bail};
 use fancy_regex::Regex;
 use redis::{AsyncCommands, aio::MultiplexedConnection};
 use serde::{
@@ -20,7 +20,7 @@ use teloxide::{
     update_listeners::{self},
     utils::command::BotCommands,
 };
-use tokio::{fs::File, io::AsyncReadExt, sync::OnceCell};
+use tokio::{io::AsyncReadExt, sync::OnceCell};
 use utils::EasySendMessage;
 
 pub mod admin;
@@ -39,6 +39,7 @@ pub struct Config {
     pub admin_log: ChatId,
     pub master_channel: ChatId,
     pub watch_list: Vec<UserId>,
+    #[serde(default)]
     pub questions: Vec<question::Question>,
     #[serde(deserialize_with = "de_regex")]
     pub forward_pattern: Regex,
@@ -74,7 +75,14 @@ static CLIENT: OnceCell<redis::Client> = OnceCell::const_new();
 static CONNECTION: OnceCell<MultiplexedConnection> = OnceCell::const_new();
 async fn get_connection() -> MultiplexedConnection {
     CONNECTION
-        .get_or_init(|| async { CLIENT.get().expect("Redis client not initialized").get_multiplexed_async_connection().await.unwrap() })
+        .get_or_init(|| async {
+            CLIENT
+                .get()
+                .expect("Redis client not initialized")
+                .get_multiplexed_async_connection()
+                .await
+                .unwrap()
+        })
         .await
         .clone()
 }
@@ -89,11 +97,48 @@ async fn main() -> Result<()> {
     pretty_env_logger::init();
     log::info!("Starting shit bot...");
 
-    let mut f = File::open("config.yaml").await?;
-    let mut buf = Vec::new();
-    f.read_to_end(&mut buf).await?;
+    let os_conf;
+    let conf: &Path = if let Some(conf) = std::env::var_os("SHIT_BOT_CONFIG") {
+        os_conf = conf;
+        log::info!("Using config from env: {:?}", os_conf);
+        os_conf.as_ref()
+    } else {
+        log::info!("Using default config: config.yaml");
+        "config.yaml".as_ref()
+    };
+    let os_q;
+    let (questions_conf, explicit): (&Path, _) = if let Some(conf) = std::env::var_os("SHIT_BOT_QUESTIONS") {
+        os_q = conf;
+        log::info!("Using questions file from env: {:?}", os_q);
+        (os_q.as_ref(), true)
+    } else {
+        log::info!("Try default questions file: questions.yaml");
+        ("questions.yaml".as_ref(), false)
+    };
 
-    let config = serde_yaml::from_slice::<Config>(&buf)?;
+    let mut config = serde_yaml::from_slice::<Config>(&tokio::fs::read(conf).await?)?;
+
+    match tokio::fs::File::open(questions_conf).await {
+        Ok(mut ques_file) => {
+            let mut buf = Vec::new();
+            ques_file.read_to_end(&mut buf).await?;
+            let questions: Vec<question::Question> = serde_yaml::from_slice(&buf)?;
+            config.questions.extend(questions);
+        }
+        Err(e) => {
+            if explicit {
+                log::error!("Failed to open questions file: {}", e);
+            } else {
+                log::info!("Default questions file not exists.");
+            }
+        }
+    }
+    if config.questions.is_empty() {
+        bail!("No questions loaded.");
+    } else {
+        log::info!("Loaded {} questions.", config.questions.len());
+    }
+
     CLIENT.set(redis::Client::open(config.redis.clone()).unwrap()).unwrap();
 
     let bot = teloxide::Bot::new(config.token.clone());
