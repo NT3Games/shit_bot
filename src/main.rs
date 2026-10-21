@@ -32,6 +32,7 @@ pub type Bot = teloxide::Bot;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
+    #[serde(default)]
     pub token: String,
     pub to_chat: ChatId,
     pub listen_chat: ChatId,
@@ -137,6 +138,14 @@ async fn main() -> Result<()> {
         bail!("No questions loaded.");
     } else {
         log::info!("Loaded {} questions.", config.questions.len());
+    }
+
+    if let Ok(token) = std::env::var("SHIT_BOT_TOKEN") {
+        log::info!("Using token from environment variable.");
+        config.token = token;
+    }
+    if config.token.is_empty() {
+        bail!("No bot token provided in config or environment (SHIT_BOT_TOKEN).");
     }
 
     CLIENT.set(redis::Client::open(config.redis.clone()).unwrap()).unwrap();

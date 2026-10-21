@@ -1,4 +1,4 @@
-token: "1234567890:AAAAAAA..." # telegram bot token
+# token: "1234567890:AAAAAAA..." # telegram bot token (optional if SHIT_BOT_TOKEN env var is set)
 to_chat: -100                  # the chat forward to
 listen_chat: -100              # the working chat
 manage_chat: -100

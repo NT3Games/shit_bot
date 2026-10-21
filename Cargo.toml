@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 log = "0.4.17"
 pretty_env_logger = "0.5.0"
-teloxide = { version = "0.17.0", features = ["macros"] }
+teloxide = { version = "0.17.0", default-features = false, features = ["macros", "ctrlc_handler", "rustls"] }
 tokio = { version = "1.21.1", features = [
   "macros",
   "rt-multi-thread",
@@ -20,7 +20,7 @@ serde = { version = "1.0", features = ["serde_derive"] }
 serde_yaml = "0.9.13"
 chrono = "0.4.22"
 rand = "0.9.1"
-reqwest = { version = "0.12.8", features = ["json"] }
+reqwest = { version = "0.12.8", default-features = false, features = ["json", "rustls-tls"] }
 htmlescape = "0.3.1"
 serde_regex = "1.1.0"
 fancy-regex = "*"
