@@ -10,7 +10,7 @@ use super::{
     handler::{Handler, res},
     user_finish,
 };
-use crate::{Bot, question, utils::*};
+use crate::{Bot, utils::*};
 
 #[derive(Debug, Clone, Copy)]
 pub struct LinkHandler;
@@ -21,26 +21,18 @@ impl Handler for LinkHandler {
             return Ok(());
         }
 
-        let (title, options, correct_idx) = question::new_question();
-
-        let data = QuestionData {
-            user: user.clone(),
-            chat_id: chat.id,
-            message_id: Some(message_id),
-            title,
-            options,
-            correct: correct_idx,
-            tried_times: 0,
-            cas: None,
-            left_minutes: 5,
-            handler: super::handler::HandlerKind::Link,
-        };
+        let data = QuestionData::new(
+            user.clone(),
+            chat.id,
+            Some(message_id),
+            super::handler::HandlerKind::Link,
+        );
 
         let res = bot
             .send_message(chat.id, data.message())
             .parse_mode(ParseMode::Html)
             .reply_to_message_id(message_id)
-            .reply_markup(data.keyboard(true))
+            .reply_markup(data.keyboard())
             .await;
 
         let msg: Message = match res {

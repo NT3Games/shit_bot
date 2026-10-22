@@ -35,10 +35,29 @@ pub struct QuestionData {
     pub tried_times: u8,
     pub cas: Option<MessageId>, // i32 is message id
     pub left_minutes: u8,
+    pub can_change: bool,
     pub handler: handler::HandlerKind,
 }
 
 impl QuestionData {
+    pub fn new(user: User, chat_id: ChatId, message_id: Option<MessageId>, handler: handler::HandlerKind) -> Self {
+        let (title, options, correct) = question::new_question();
+
+        QuestionData {
+            user,
+            chat_id,
+            message_id,
+            title,
+            options,
+            correct,
+            tried_times: 0,
+            cas: None,
+            left_minutes: 5,
+            can_change: true,
+            handler,
+        }
+    }
+
     pub fn message(&self) -> String {
         format!(
             "{}，你有 {} 分钟时间回答以下问题：\n\n{}",
@@ -48,14 +67,14 @@ impl QuestionData {
         )
     }
 
-    pub fn keyboard(&self, change: bool) -> InlineKeyboardMarkup {
+    pub fn keyboard(&self) -> InlineKeyboardMarkup {
         let mut keyboard = InlineKeyboardMarkup::new(
             self.options
                 .iter()
                 .enumerate()
                 .map(|(idx, &text)| vec![InlineKeyboardButton::callback(text, idx.to_string())]),
         );
-        if change {
+        if self.can_change {
             keyboard = keyboard.append_row(vec![InlineKeyboardButton::callback("换题🔁", "change")])
         }
         self.handler.keyboard_patch(keyboard)
@@ -270,9 +289,10 @@ async fn callback_handle(bot: Bot, callback: &CallbackQuery, data: &mut Question
         data.correct = correct_idx;
         data.options = options;
         data.title = title;
+        data.can_change = false;
         bot.edit_message_text(origin.chat().id, origin.id(), data.message())
             .parse_mode(ParseMode::Html)
-            .reply_markup(data.keyboard(false))
+            .reply_markup(data.keyboard())
             .await?;
         res!(Answer)
     } else {
@@ -295,7 +315,7 @@ where
             } else {
                 bot.edit_message_text(data.chat_id, msg_id, data.message())
                     .parse_mode(ParseMode::Html)
-                    .reply_markup(data.keyboard(false))
+                    .reply_markup(data.keyboard())
                     .await
                     .ok();
             }

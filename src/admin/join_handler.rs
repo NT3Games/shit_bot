@@ -10,7 +10,7 @@ use teloxide::{
 };
 
 use super::{QuestionData, auth_database, get_data_by_msg, handler::*, user_finish};
-use crate::{Bot, CONFIG, question, utils::*};
+use crate::{Bot, CONFIG, utils::*};
 
 async fn check_cas(bot: Bot, chat_id: ChatId, user_id: UserId, msg_id: i32) -> Result<()> {
     let ok = reqwest::get(Url::parse_with_params(
@@ -113,8 +113,6 @@ impl Handler for JoinHandler {
             return Ok(());
         }
 
-        let (title, options, correct_idx) = question::new_question();
-
         // mute user
         let res = bot
             .restrict_chat_member(chat.id, user.id, teloxide::types::ChatPermissions::empty())
@@ -124,23 +122,12 @@ impl Handler for JoinHandler {
             return Err(err.into());
         }
 
-        let data = super::QuestionData {
-            user: user.clone(),
-            chat_id: chat.id,
-            message_id: None,
-            title,
-            options,
-            correct: correct_idx,
-            tried_times: 0,
-            cas: None,
-            left_minutes: 5,
-            handler: super::handler::HandlerKind::Join,
-        };
+        let data = QuestionData::new(user.clone(), chat.id, None, super::handler::HandlerKind::Join);
 
         let res = bot
             .send_message(chat.id, data.message())
             .parse_mode(ParseMode::Html)
-            .reply_markup(data.keyboard(true))
+            .reply_markup(data.keyboard())
             .await;
 
         let msg: Message = match res {
