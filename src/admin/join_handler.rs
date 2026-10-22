@@ -262,6 +262,7 @@ async fn allow(bot: Bot, (msg_id, data): (i32, QuestionData), remain_cas: bool) 
                 metion_user(&data.user)
             );
             bot.edit_message_text(data.chat_id, cas, text)
+                .parse_mode(ParseMode::Html)
                 .reply_markup(InlineKeyboardMarkup::default())
                 .await?;
         } else {
