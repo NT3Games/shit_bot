@@ -70,7 +70,7 @@ impl Handler for JoinHandler {
         }
 
         if auth_database::is_authed(user.id.0).await? {
-            bot.send_message(chat.id, format!("{}，欢迎！", metion_user(&user)))
+            bot.send_message(chat.id, format!("{}，欢迎！", mention_user(&user)))
                 .parse_mode(ParseMode::Html)
                 .await?;
 
@@ -87,17 +87,17 @@ impl Handler for JoinHandler {
                 if let Err(err) = req.await {
                     bot.send_message(
                         chat.id,
-                        format!("用户 {} 未加入主频道，但是踢出用户失败：{}", metion_user(&user), err),
+                        format!("用户 {} 未加入主频道，但是踢出用户失败：{}", mention_user(&user), err),
                     )
                     .parse_mode(ParseMode::Html)
                     .await?;
                 } else {
-                    let _ = admin_log(bot, format!("用户 {} 未加入主频道，已踢出。", metion_user(&user))).await;
+                    let _ = admin_log(bot, format!("用户 {} 未加入主频道，已踢出。", mention_user(&user))).await;
                     return Ok(());
                 }
             }
             Err(err) => {
-                bot.send_message(chat.id, format!("检查 {} 频道存在失败：{}", metion_user(&user), err))
+                bot.send_message(chat.id, format!("检查 {} 频道存在失败：{}", mention_user(&user), err))
                     .parse_mode(ParseMode::Html)
                     .await
                     .ok();
@@ -106,7 +106,7 @@ impl Handler for JoinHandler {
 
         if user.is_premium {
             auth_database::add_authed(user.id.0).await?;
-            bot.send_message(chat.id, format!("Premium 用户 {}，欢迎！", metion_user(&user)))
+            bot.send_message(chat.id, format!("Premium 用户 {}，欢迎！", mention_user(&user)))
                 .parse_mode(ParseMode::Html)
                 .await?;
 
@@ -246,7 +246,7 @@ async fn allow(bot: Bot, (msg_id, data): (i32, QuestionData), remain_cas: bool) 
             let text = format!(
                 "⚠️管理员注意，<a href=\"https://cas.chat/query?u={}\">CAS 封禁用户</a> {} 已通过验证加入群组",
                 data.user.id,
-                metion_user(&data.user)
+                mention_user(&data.user)
             );
             bot.edit_message_text(data.chat_id, cas, text)
                 .parse_mode(ParseMode::Html)
@@ -260,7 +260,7 @@ async fn allow(bot: Bot, (msg_id, data): (i32, QuestionData), remain_cas: bool) 
     send_and_delete_join_result(
         bot,
         data.chat_id,
-        format!("{} 验证通过，欢迎！", metion_user(&data.user)),
+        format!("{} 验证通过，欢迎！", mention_user(&data.user)),
     )
     .await?;
 
@@ -284,7 +284,7 @@ pub async fn ban(bot: Bot, (msg_id, data): (i32, QuestionData), until_date: Opti
     let message = if is_spam_name(&data.user.full_name()) {
         "<filtered> 验证失败！".to_string()
     } else {
-        format!("{} 验证失败，被扔进化粪池里了！", metion_user(&data.user))
+        format!("{} 验证失败，被扔进化粪池里了！", mention_user(&data.user))
     };
     send_and_delete_join_result(bot, data.chat_id, message).await?;
 

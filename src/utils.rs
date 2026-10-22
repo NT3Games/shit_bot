@@ -10,7 +10,7 @@ use crate::Bot;
 
 const LAST_JOIN_RESULT_KEY: &str = "shit_bot_last_join_result";
 
-pub fn metion_user(user: &User) -> String {
+pub fn mention_user(user: &User) -> String {
     if let Some(username) = user.username.as_ref() {
         format!("<a href=\"tg://user?id={}\">@{}</a>", user.id, username)
     } else {

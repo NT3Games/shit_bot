@@ -61,7 +61,7 @@ impl QuestionData {
     pub fn message(&self) -> String {
         format!(
             "{}，你有 {} 分钟时间回答以下问题：\n\n{}",
-            metion_user(&self.user),
+            mention_user(&self.user),
             self.left_minutes,
             self.title
         )
@@ -86,13 +86,13 @@ struct CasResult {
     pub ok: bool,
 }
 
-pub struct WatingManager {
+pub struct WaitingManager {
     // question message id as key
     datas: BTreeMap<i32, QuestionData>,
     handles: BTreeMap<i32, Vec<AbortHandle>>,
 }
 
-impl WatingManager {
+impl WaitingManager {
     pub const fn new() -> Self {
         Self {
             datas: BTreeMap::new(),
@@ -121,7 +121,7 @@ impl WatingManager {
     }
 }
 
-impl Default for WatingManager {
+impl Default for WaitingManager {
     fn default() -> Self {
         Self::new()
     }
@@ -131,7 +131,7 @@ impl Default for WatingManager {
 // static WATING_MESSAGES: Mutex<BTreeMap<i32, QuestionData>> = Mutex::const_new(BTreeMap::new());
 // static WATING_MESSAGES_TASKS: Mutex<BTreeMap<i32, Vec<AbortHandle>>> =
 //     Mutex::const_new(BTreeMap::new());
-static WATING_MANAGER: Mutex<WatingManager> = Mutex::const_new(WatingManager::new());
+static WATING_MANAGER: Mutex<WaitingManager> = Mutex::const_new(WaitingManager::new());
 
 static TO_DELETE_MESSAGE: SegQueue<(ChatId, MessageId)> = SegQueue::new();
 

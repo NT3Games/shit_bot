@@ -1,7 +1,7 @@
 use anyhow::Result;
 use redis::AsyncCommands;
 
-pub const AUTHED_USERS_KEY: &str = "shit_bot_authed_users";
+use super::AUTHED_USERS_KEY;
 
 pub async fn is_authed(user_id: u64) -> Result<bool> {
     let mut con = crate::get_connection().await;
