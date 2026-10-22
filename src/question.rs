@@ -15,8 +15,10 @@ pub fn new_question() -> (&'static String, Vec<&'static String>, usize) {
     let mut rng = rng();
     let question = CONFIG.get().unwrap().questions.choose(&mut rng).expect("no question");
 
-    let (title, correct_answers, wrong_answers) = if question.contrary.is_some() && rng.random_bool(0.5) {
-        (question.contrary.as_ref().unwrap(), &question.wrong, &question.correct)
+    let (title, correct_answers, wrong_answers) = if let Some(ref contrary) = question.contrary
+        && rng.random_bool(0.5)
+    {
+        (contrary, &question.wrong, &question.correct)
     } else {
         (&question.title, &question.correct, &question.wrong)
     };

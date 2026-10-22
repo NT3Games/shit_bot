@@ -1,27 +1,27 @@
 [package]
 name = "shit_bot"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-log = "0.4.17"
+log = "0.4.34"
 pretty_env_logger = "0.5.0"
 teloxide = { version = "0.17.0", default-features = false, features = ["macros", "ctrlc_handler", "rustls"] }
-tokio = { version = "1.21.1", features = [
+tokio = { version = "1.54.1", features = [
   "macros",
   "rt-multi-thread",
   "parking_lot",
 ] }
-redis = { version = "0.31.0", features = ["tokio-comp"], default-features = false }
-anyhow = "1.0.65"
+redis = { version = "1.7.1", features = ["tokio-comp"], default-features = false }
+anyhow = "1.0.104"
 serde = { version = "1.0", features = ["serde_derive"] }
-serde_yaml = "0.9.13"
-chrono = "0.4.22"
-rand = "0.9.1"
-reqwest = { version = "0.12.8", default-features = false, features = ["json", "rustls-tls"] }
+serde_yaml = "0.9.34"
+chrono = "0.4.45"
+rand = "0.9.5"
+reqwest = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls"] }
 htmlescape = "0.3.1"
 fancy-regex = "*"
-crossbeam-queue = "0.3.11"
+crossbeam-queue = "0.3.14"
 futures = "*"

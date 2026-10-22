@@ -28,12 +28,13 @@ where
 
 impl ErrorHandler<RequestError> for UpdateErrorHandler {
     fn handle_error(self: Arc<Self>, error: RequestError) -> BoxFuture<'static, ()> {
-        if let RequestError::Network(ref e) = error {
-            if e.is_timeout() {
-                // ignore
-                return Box::pin(async {});
-            }
+        if let RequestError::Network(ref e) = error
+            && e.is_timeout()
+        {
+            // ignore
+            return Box::pin(async {});
         }
+
         log::error!("{text}: {:?}", error, text = self.text);
         Box::pin(async {})
     }
