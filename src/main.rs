@@ -266,7 +266,7 @@ async fn main() -> Result<()> {
             Update::filter_channel_post().endpoint(|_bot: Bot, msg: Message| async move {
                 if msg.chat.id == CONFIG.get().unwrap().to_chat {
                     let mut con = get_connection().await;
-                    () = con.set(LAST_SENT_KEY, msg.id.0).await?;
+                    () = con.set(LAST_SHIT_KEY, msg.id.0).await?;
                 }
                 Ok(())
             }),
