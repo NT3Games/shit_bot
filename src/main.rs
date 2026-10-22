@@ -445,42 +445,45 @@ async fn command_handle(bot: Bot, message: Message, command: Command) -> Result<
                 return Ok(());
             }
             if let Some(reply) = message.reply_to_message() {
-                let (res, name) = if let Some(sender) = reply.sender_chat.as_ref() {
-                    (
-                        bot.ban_chat_sender_chat(message.chat.id, sender.id).await,
-                        if let Some(title) = sender.title() {
-                            title.to_string()
-                        } else if let Some(username) = sender.username() {
-                            format!("@{}", username)
-                        } else {
-                            "频道身份用户".to_string()
-                        },
-                    )
-                } else {
-                    let sender = reply.from.as_ref().unwrap();
+                let (res, mention) = if let Some(sender) = reply.sender_chat.as_ref() {
+                    let name = if let Some(title) = sender.title() {
+                        htmlescape::encode_minimal(title)
+                    } else if let Some(username) = sender.username() {
+                        format!("@{}", username)
+                    } else {
+                        "频道身份用户".to_string()
+                    };
+                    let mention = if let Some(username) = sender.username() {
+                        format!("<a href=\"https://t.me/{}\">{}</a>", username, name)
+                    } else {
+                        name
+                    };
+                    (bot.ban_chat_sender_chat(message.chat.id, sender.id).await, mention)
+                } else if let Some(sender) = reply.from.as_ref() {
+                    let name = if let Some(username) = sender.username.as_ref() {
+                        format!("{} (@{})", htmlescape::encode_minimal(&sender.full_name()), username)
+                    } else {
+                        htmlescape::encode_minimal(&sender.full_name())
+                    };
+                    let mention = format!("<a href=\"tg://user?id={}\">{}</a>", sender.id, name);
                     (
                         bot.restrict_chat_member(message.chat.id, sender.id, teloxide::types::ChatPermissions::empty())
                             .await,
-                        if let Some(username) = sender.username.as_ref() {
-                            format!("{} (@{})", sender.full_name(), username)
-                        } else {
-                            sender.full_name()
-                        },
+                        mention,
                     )
+                } else {
+                    bot.send_message(message.chat.id, "无法获取目标用户信息")
+                        .reply_to_message_id(message.id)
+                        .await?;
+                    return Ok(());
                 };
                 match res {
                     Ok(_) => {
-                        bot.send_message(
-                            message.chat.id,
-                            format!(
-                                "<a href=\"tg://user?id={}\">{}</a> 的嘴已被屎球堵上",
-                                reply.from.as_ref().unwrap().id,
-                                name
-                            ),
-                        )
-                        .reply_to_message_id(message.id)
-                        .parse_mode(teloxide::types::ParseMode::Html)
-                        .await?;
+                        bot.send_message(message.chat.id, format!("{} 的嘴已被屎球堵上", mention))
+                            .reply_to_message_id(message.id)
+                            .parse_mode(teloxide::types::ParseMode::Html)
+                            .disable_web_page_preview()
+                            .await?;
                     }
                     Err(e) => {
                         bot.send_message(message.chat.id, e.to_string())
