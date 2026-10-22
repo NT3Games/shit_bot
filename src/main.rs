@@ -184,11 +184,12 @@ async fn main() -> Result<()> {
         .branch(
             Update::filter_message()
                 .branch(dptree::filter(|msg: Message| msg.is_automatic_forward()).endpoint(auto_unpin))
+                .branch(dptree::entry().filter_command::<Command>().endpoint(command_handle))
                 .branch(
                     dptree::filter_async(|msg: Message| async move {
-                        if msg.from.is_none() {
+                        let Some(user) = msg.from.as_ref() else {
                             return false;
-                        }
+                        };
 
                         if !(msg.chat.id == CONFIG.get().unwrap().manage_chat) {
                             return false;
@@ -205,14 +206,11 @@ async fn main() -> Result<()> {
                             return false;
                         }
 
-                        let mut con = crate::get_connection().await;
-
-                        let res = con.sismember(admin::AUTHED_USERS_KEY, msg.from.unwrap().id.0).await;
-                        match res {
-                            Ok(res) =>
+                        match admin::auth_database::is_authed(user.id.0).await {
+                            Ok(is_authed) =>
                             {
                                 #[allow(clippy::needless_bool)]
-                                if res {
+                                if is_authed {
                                     false
                                 } else {
                                     true
@@ -241,7 +239,6 @@ async fn main() -> Result<()> {
                         Ok(())
                     }),
                 )
-                .branch(dptree::entry().filter_command::<Command>().endpoint(command_handle))
                 .branch(
                     dptree::filter(|msg: Message| {
                         let config = CONFIG.get().unwrap();
