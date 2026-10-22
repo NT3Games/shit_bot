@@ -105,6 +105,7 @@ impl Handler for JoinHandler {
         }
 
         if user.is_premium {
+            auth_database::add_authed(user.id.0).await?;
             bot.send_message(chat.id, format!("Premium 用户 {}，欢迎！", metion_user(&user)))
                 .parse_mode(ParseMode::Html)
                 .await?;
@@ -239,6 +240,7 @@ impl Handler for JoinHandler {
 }
 
 async fn allow(bot: Bot, (msg_id, data): (i32, QuestionData), remain_cas: bool) -> Result<()> {
+    auth_database::add_authed(data.user.id.0).await?;
     let res = bot
         .restrict_chat_member(data.chat_id, data.user.id, teloxide::types::ChatPermissions::all())
         .await;

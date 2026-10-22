@@ -124,6 +124,7 @@ async fn delete_sent_message(bot: Bot, (msg_id, data): (i32, QuestionData)) -> R
 }
 
 async fn allow_send_message(_bot: Bot, (msg_id, data): (i32, QuestionData)) -> Result<()> {
+    auth_database::add_authed(data.user.id.0).await?;
     super::TO_DELETE_MESSAGE.push((data.chat_id, MessageId(msg_id)));
 
     Ok(())

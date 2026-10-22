@@ -154,7 +154,7 @@ pub async fn callback(bot: Bot, callback: CallbackQuery) -> Result<()> {
     let msg_id = callback.message.as_ref().unwrap().id();
     let callback_id = callback.id.clone();
 
-    let (result, mut handler, user_id) = {
+    let (result, mut handler) = {
         if let Some(mut data) = get_data_by_msg(&msg_id.0).await {
             let result = callback_handle(bot.clone(), &callback, data.deref_mut()).await?;
 
@@ -168,7 +168,7 @@ pub async fn callback(bot: Bot, callback: CallbackQuery) -> Result<()> {
                     bot.answer_callback_query(callback.id).await?;
                 }
             }
-            (result, data.handler, data.user.id)
+            (result, data.handler)
         } else {
             bot.answer_callback_query(callback.id).await?;
             return Ok(());
@@ -179,10 +179,7 @@ pub async fn callback(bot: Bot, callback: CallbackQuery) -> Result<()> {
     use CallbackResultType::*;
     let res = match result.typ {
         Answer => return Ok(()),
-        HandleCorrect => {
-            auth_database::add_authed(user_id.0).await?;
-            handler.handle_correct(bot, msg_id).await
-        }
+        HandleCorrect => handler.handle_correct(bot, msg_id).await,
         HandleWrong => handler.handle_wrong(bot, msg_id).await,
         HandleOther => handler.handle_other(bot, callback.data.as_ref().unwrap(), msg_id).await,
     };
