@@ -309,14 +309,40 @@ async fn main() -> Result<()> {
     );
     utils::admin_log(bot.clone(), startup_msg).await.ok();
 
-    Dispatcher::builder(bot.clone(), handler)
+    let mut dispatcher = Dispatcher::builder(bot.clone(), handler)
         // .dependencies(dptree::deps![parameters])
         .default_handler(|upd| async move {
             log::trace!("Unhandled update: {:?}", upd);
         })
         .error_handler(LoggingErrorHandler::with_custom_text("Dispatcher"))
-        .enable_ctrlc_handler()
-        .build()
+        .build();
+
+    let token = dispatcher.shutdown_token();
+    tokio::spawn(async move {
+        use tokio::signal::unix::{SignalKind, signal};
+        let mut sigint = signal(SignalKind::interrupt()).expect("Failed to listen for SIGINT");
+        let mut sigterm = signal(SignalKind::terminate()).expect("Failed to listen for SIGTERM");
+
+        loop {
+            let sig_name = tokio::select! {
+                _ = sigint.recv() => "SIGINT",
+                _ = sigterm.recv() => "SIGTERM",
+            };
+
+            match token.shutdown() {
+                Ok(f) => {
+                    log::info!("{sig_name} received, trying to shutdown the dispatcher...");
+                    f.await;
+                    log::info!("dispatcher is shutdown...");
+                }
+                Err(_) => {
+                    log::info!("{sig_name} received, the dispatcher isn't running, ignoring the signal");
+                }
+            }
+        }
+    });
+
+    dispatcher
         .dispatch_with_listener(polling, error::UpdateErrorHandler::new())
         .await;
 
