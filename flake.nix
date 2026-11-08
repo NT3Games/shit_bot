@@ -165,6 +165,13 @@
                   SHIT_BOT_QUESTIONS = "${cfg.questionsFile}";
                 };
 
+                unitConfig = lib.mkIf (cfg.environmentFile != null) {
+                  ConditionPathExists = cfg.environmentFile;
+                };
+
+                startLimitIntervalSec = 60;
+                startLimitBurst = 3;
+
                 serviceConfig = {
                   ExecStart = lib.getExe cfg.package;
                   DynamicUser = true;
